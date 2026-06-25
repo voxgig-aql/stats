@@ -31,7 +31,7 @@ mistakes to avoid. Every example there is verified against the pinned
   (via a codeload tarball, so it works even where raw `git clone` of aql is
   blocked). See its `README.md`.
 - Known AQL-runtime gotchas observed with the pinned build are in
-  `dx-report.md`. The pinned aql commit (`f5e590f…`) is single-sourced in
+  `dx-report.md`. The pinned aql commit (`c5fbb04…`) is single-sourced in
   `.github/workflows/test.yml`'s `AQL_REF`; a CI job fails if the hook,
   `test/divergence/run.sh`, or `api.json` drift from it.
 - Forking this repo to start a new AQL library? See `TEMPLATE.md` on the

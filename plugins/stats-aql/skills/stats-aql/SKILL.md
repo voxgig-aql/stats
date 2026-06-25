@@ -7,7 +7,7 @@ description: Use when writing or editing AQL code that calls the Stats statistic
 
 Descriptive, inferential, and matrix statistics. Public surface = the
 `Stats` namespace plus the `Summary` type. Everything below is verified
-against `aql @ f5e590f` (main, with `aql:matrix-util`).
+against `aql @ c5fbb04` (main, with `aql:matrix-util`).
 
 ## Import
 

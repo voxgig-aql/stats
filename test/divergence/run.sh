@@ -30,7 +30,7 @@ set -uo pipefail
 # union-narrowing behaviour this stats module relies on are present, and
 # all five suites interpret, check (0 errors), and compile identically to
 # the interpreter on it. Bump in lockstep with the workflow AQL_REF.
-AQL_BYTECODE_REF=f5e590f1418ef2b4f5c6179321a89b5723b63201
+AQL_BYTECODE_REF=c5fbb041b65ceab442b1df16e84a88b9365d71d8
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
