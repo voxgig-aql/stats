@@ -5,7 +5,7 @@
   "description": "Statistics for AQL: descriptive, inferential, and matrix statistics exposed as the single `Stats` namespace, plus a streaming `Summary` accumulator. Descriptive words accept a List of numbers or a Summary; order statistics take a List only; the dataset words operate on an aql:matrix-util Matrix.",
   "conventions": {
     "import": "import \"./stats.aql\"  — no `end` needed; the library imports its own aql:* deps (math-util, array-util, matrix-util, struct-util). Callers who BUILD a Matrix to pass to the dataset words must `import \"aql:matrix-util\"` themselves — the MatrixUtil binding is not re-exported.",
-    "call": "receiver-first, verb in the middle, terminated with `end` (or wrapped in parens): `receiver Stats.verb arg... end`. Without a terminator the verb swallows the following token, giving a wrong result or a dispatch error.",
+    "call": "verb-first, all-forward: `Stats.verb data arg... end` (the verb, then the data, then any extra args, terminated with `end` or wrapped in parens). Without a terminator the verb swallows the following token, giving a wrong result or a dispatch error. (The core words each/fold, indexing `get`, and the matrix accessors MatrixUtil.row/col read their subject from the stack and stay subject-first.)",
     "input_polymorphism": "every descriptive word (mean, sum, count, min, max, range, variance, pvariance, stddev, pstddev, skewness, kurtosis) accepts EITHER a List of numbers OR a Summary; the order-statistic words (median, quantile, iqr, mode) require the raw data and take a List only (a Summary raises needs_data).",
     "sample_vs_population": "the unqualified `variance`/`stddev` are SAMPLE statistics (divide by n-1); `pvariance`/`pstddev` are POPULATION (divide by n). Likewise `covariance` is sample, `pcovariance` is population.",
     "numeric": "inputs may be Integer or Float; results are Float (count is Integer). All arithmetic is done in Float — Integer overflow is a hard error in aql, not a silent wrap.",
@@ -25,52 +25,52 @@
   },
   "word_specs": {
     "accumulator": {
-      "summary":   { "call": "xs Stats.summary end",        "args": ["xs:List"],                  "returns": "Summary",  "note": "Build a streaming accumulator from a List of numbers ([] gives an empty Summary)." },
-      "push":      { "call": "s Stats.push x end",           "args": ["s:Summary", "x:Number"],    "returns": "Summary",  "note": "MUTATES s, returns the SAME object. Welford update." },
-      "push-all":  { "call": "s Stats.push-all xs end",      "args": ["s:Summary", "xs:List"],     "returns": "Summary",  "note": "MUTATES s with every element of xs, returns it." },
-      "merge":     { "call": "a Stats.merge b end",          "args": ["a:Summary", "b:Summary"],   "returns": "Summary",  "note": "Combine the moments of b into a (parallel/Pébay combine). MUTATES a and returns it. Always compatible (no parameters to disagree on). O(1)." },
-      "encode":    { "call": "s Stats.encode end",           "args": ["s:Summary"],                "returns": "String",   "note": "jsonic snapshot of the moments. Round-trips through Stats.decode." },
-      "decode":    { "call": "text Stats.decode end",        "args": ["text:String"],              "returns": "Summary",  "note": "Rebuild a Summary from a snapshot. Raises bad_payload on unparseable or incomplete text." }
+      "summary":   { "call": "Stats.summary xs end",        "args": ["xs:List"],                  "returns": "Summary",  "note": "Build a streaming accumulator from a List of numbers ([] gives an empty Summary)." },
+      "push":      { "call": "Stats.push s x end",           "args": ["s:Summary", "x:Number"],    "returns": "Summary",  "note": "MUTATES s, returns the SAME object. Welford update." },
+      "push-all":  { "call": "Stats.push-all s xs end",      "args": ["s:Summary", "xs:List"],     "returns": "Summary",  "note": "MUTATES s with every element of xs, returns it." },
+      "merge":     { "call": "Stats.merge a b end",          "args": ["a:Summary", "b:Summary"],   "returns": "Summary",  "note": "Combine the moments of b into a (parallel/Pébay combine). MUTATES a and returns it. Always compatible (no parameters to disagree on). O(1)." },
+      "encode":    { "call": "Stats.encode s end",           "args": ["s:Summary"],                "returns": "String",   "note": "jsonic snapshot of the moments. Round-trips through Stats.decode." },
+      "decode":    { "call": "Stats.decode text end",        "args": ["text:String"],              "returns": "Summary",  "note": "Rebuild a Summary from a snapshot. Raises bad_payload on unparseable or incomplete text." }
     },
     "descriptive": {
-      "count":     { "call": "x Stats.count end",     "args": ["x:List|Summary"], "returns": "Integer", "note": "Number of observations. Empty => 0." },
-      "sum":       { "call": "x Stats.sum end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Total of the observations." },
-      "mean":      { "call": "x Stats.mean end",      "args": ["x:List|Summary"], "returns": "Float",   "note": "Arithmetic mean. Needs >= 1 value (else bad_input)." },
-      "variance":  { "call": "x Stats.variance end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "SAMPLE variance (m2/(n-1)). Needs >= 2 values." },
-      "pvariance": { "call": "x Stats.pvariance end", "args": ["x:List|Summary"], "returns": "Float",   "note": "POPULATION variance (m2/n). Needs >= 1 value." },
-      "stddev":    { "call": "x Stats.stddev end",    "args": ["x:List|Summary"], "returns": "Float",   "note": "SAMPLE standard deviation (sqrt of variance)." },
-      "pstddev":   { "call": "x Stats.pstddev end",   "args": ["x:List|Summary"], "returns": "Float",   "note": "POPULATION standard deviation." },
-      "min":       { "call": "x Stats.min end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Minimum observation." },
-      "max":       { "call": "x Stats.max end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Maximum observation." },
-      "range":     { "call": "x Stats.range end",     "args": ["x:List|Summary"], "returns": "Float",   "note": "max - min." },
-      "skewness":  { "call": "x Stats.skewness end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "Biased sample skewness g1 = (m3/n)/(m2/n)^1.5. Raises bad_input on zero-variance data." },
-      "kurtosis":  { "call": "x Stats.kurtosis end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "Biased excess kurtosis g2 = (m4/n)/(m2/n)^2 - 3. Raises bad_input on zero-variance data." }
+      "count":     { "call": "Stats.count x end",     "args": ["x:List|Summary"], "returns": "Integer", "note": "Number of observations. Empty => 0." },
+      "sum":       { "call": "Stats.sum x end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Total of the observations." },
+      "mean":      { "call": "Stats.mean x end",      "args": ["x:List|Summary"], "returns": "Float",   "note": "Arithmetic mean. Needs >= 1 value (else bad_input)." },
+      "variance":  { "call": "Stats.variance x end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "SAMPLE variance (m2/(n-1)). Needs >= 2 values." },
+      "pvariance": { "call": "Stats.pvariance x end", "args": ["x:List|Summary"], "returns": "Float",   "note": "POPULATION variance (m2/n). Needs >= 1 value." },
+      "stddev":    { "call": "Stats.stddev x end",    "args": ["x:List|Summary"], "returns": "Float",   "note": "SAMPLE standard deviation (sqrt of variance)." },
+      "pstddev":   { "call": "Stats.pstddev x end",   "args": ["x:List|Summary"], "returns": "Float",   "note": "POPULATION standard deviation." },
+      "min":       { "call": "Stats.min x end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Minimum observation." },
+      "max":       { "call": "Stats.max x end",       "args": ["x:List|Summary"], "returns": "Float",   "note": "Maximum observation." },
+      "range":     { "call": "Stats.range x end",     "args": ["x:List|Summary"], "returns": "Float",   "note": "max - min." },
+      "skewness":  { "call": "Stats.skewness x end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "Biased sample skewness g1 = (m3/n)/(m2/n)^1.5. Raises bad_input on zero-variance data." },
+      "kurtosis":  { "call": "Stats.kurtosis x end",  "args": ["x:List|Summary"], "returns": "Float",   "note": "Biased excess kurtosis g2 = (m4/n)/(m2/n)^2 - 3. Raises bad_input on zero-variance data." }
     },
     "order": {
-      "median":   { "call": "xs Stats.median end",       "args": ["xs:List"],            "returns": "Float", "note": "List only (needs raw data; a Summary raises needs_data)." },
-      "quantile": { "call": "xs Stats.quantile q end",   "args": ["xs:List", "q:Float"], "returns": "Float", "note": "q in [0,1], linear interpolation (NumPy/R type-7). q out of range raises bad_input. List only." },
-      "iqr":      { "call": "xs Stats.iqr end",          "args": ["xs:List"],            "returns": "Float", "note": "Inter-quartile range Q3 - Q1. List only." },
-      "mode":     { "call": "xs Stats.mode end",         "args": ["xs:List"],            "returns": "Float", "note": "Most frequent value; on a tie, the smallest such value. List only." }
+      "median":   { "call": "Stats.median xs end",       "args": ["xs:List"],            "returns": "Float", "note": "List only (needs raw data; a Summary raises needs_data)." },
+      "quantile": { "call": "Stats.quantile xs q end",   "args": ["xs:List", "q:Float"], "returns": "Float", "note": "q in [0,1], linear interpolation (NumPy/R type-7). q out of range raises bad_input. List only." },
+      "iqr":      { "call": "Stats.iqr xs end",          "args": ["xs:List"],            "returns": "Float", "note": "Inter-quartile range Q3 - Q1. List only." },
+      "mode":     { "call": "Stats.mode xs end",         "args": ["xs:List"],            "returns": "Float", "note": "Most frequent value; on a tie, the smallest such value. List only." }
     },
     "bivariate": {
-      "covariance":  { "call": "xs Stats.covariance ys end",  "args": ["xs:List", "ys:List"], "returns": "Float", "note": "SAMPLE covariance. Needs >= 2 paired values; mismatched lengths raise bad_input." },
-      "pcovariance": { "call": "xs Stats.pcovariance ys end", "args": ["xs:List", "ys:List"], "returns": "Float", "note": "POPULATION covariance." },
-      "correlation": { "call": "xs Stats.correlation ys end", "args": ["xs:List", "ys:List"], "returns": "Float", "note": "Pearson correlation coefficient r in [-1, 1]. Undefined (bad_input) if a variable has zero variance." },
-      "linreg":      { "call": "xs Stats.linreg ys end",      "args": ["xs:List", "ys:List"], "returns": "Map",   "note": "Simple linear regression of ys on xs. Returns {slope, intercept, r, r2}. Predictor must have non-zero variance." }
+      "covariance":  { "call": "Stats.covariance xs ys end",  "args": ["xs:List", "ys:List"], "returns": "Float", "note": "SAMPLE covariance. Needs >= 2 paired values; mismatched lengths raise bad_input." },
+      "pcovariance": { "call": "Stats.pcovariance xs ys end", "args": ["xs:List", "ys:List"], "returns": "Float", "note": "POPULATION covariance." },
+      "correlation": { "call": "Stats.correlation xs ys end", "args": ["xs:List", "ys:List"], "returns": "Float", "note": "Pearson correlation coefficient r in [-1, 1]. Undefined (bad_input) if a variable has zero variance." },
+      "linreg":      { "call": "Stats.linreg xs ys end",      "args": ["xs:List", "ys:List"], "returns": "Map",   "note": "Simple linear regression of ys on xs. Returns {slope, intercept, r, r2}. Predictor must have non-zero variance." }
     },
     "distribution": {
-      "zscores":    { "call": "xs Stats.zscores end",                  "args": ["xs:List"],                      "returns": "List",  "note": "Sample-standardised values (x - mean)/stddev. Zero stddev raises bad_input." },
-      "normal-pdf": { "call": "x Stats.normal-pdf {mu, sigma} end",    "args": ["x:Number", "params:Map{mu:Float,sigma:Float}"], "returns": "Float", "note": "Normal probability density at x. sigma > 0 (else bad_input)." },
-      "normal-cdf": { "call": "x Stats.normal-cdf {mu, sigma} end",    "args": ["x:Number", "params:Map{mu:Float,sigma:Float}"], "returns": "Float", "note": "Normal cumulative probability at x, via an Abramowitz-Stegun erf approximation (abs error ~1.5e-7). sigma > 0." }
+      "zscores":    { "call": "Stats.zscores xs end",                  "args": ["xs:List"],                      "returns": "List",  "note": "Sample-standardised values (x - mean)/stddev. Zero stddev raises bad_input." },
+      "normal-pdf": { "call": "Stats.normal-pdf x {mu, sigma} end",    "args": ["x:Number", "params:Map{mu:Float,sigma:Float}"], "returns": "Float", "note": "Normal probability density at x. sigma > 0 (else bad_input)." },
+      "normal-cdf": { "call": "Stats.normal-cdf x {mu, sigma} end",    "args": ["x:Number", "params:Map{mu:Float,sigma:Float}"], "returns": "Float", "note": "Normal cumulative probability at x, via an Abramowitz-Stegun erf approximation (abs error ~1.5e-7). sigma > 0." }
     },
     "matrix": {
-      "col-means":     { "call": "mat Stats.col-means end",     "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column means (rows = observations)." },
-      "col-variances": { "call": "mat Stats.col-variances end", "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column SAMPLE variances." },
-      "col-stddevs":   { "call": "mat Stats.col-stddevs end",   "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column SAMPLE standard deviations." },
-      "cov-matrix":    { "call": "mat Stats.cov-matrix end",    "args": ["mat:Matrix"], "returns": "Matrix", "note": "SAMPLE covariance matrix (1/(n-1)) XcᵀXc. Needs >= 2 rows." },
-      "cor-matrix":    { "call": "mat Stats.cor-matrix end",    "args": ["mat:Matrix"], "returns": "Matrix", "note": "Correlation matrix derived from cov-matrix." },
-      "standardize":   { "call": "mat Stats.standardize end",   "args": ["mat:Matrix"], "returns": "Matrix", "note": "Each column z-scored (sample mean/stddev)." },
-      "ols":           { "call": "x Stats.ols ys end",          "args": ["x:Matrix", "ys:List"], "returns": "List", "note": "Least-squares coefficients via XᵀX b = Xᵀy. Rows of X must match length of y; a rank-deficient system raises singular. Prepend a 1s column for an intercept." }
+      "col-means":     { "call": "Stats.col-means mat end",     "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column means (rows = observations)." },
+      "col-variances": { "call": "Stats.col-variances mat end", "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column SAMPLE variances." },
+      "col-stddevs":   { "call": "Stats.col-stddevs mat end",   "args": ["mat:Matrix"], "returns": "List",   "note": "Per-column SAMPLE standard deviations." },
+      "cov-matrix":    { "call": "Stats.cov-matrix mat end",    "args": ["mat:Matrix"], "returns": "Matrix", "note": "SAMPLE covariance matrix (1/(n-1)) XcᵀXc. Needs >= 2 rows." },
+      "cor-matrix":    { "call": "Stats.cor-matrix mat end",    "args": ["mat:Matrix"], "returns": "Matrix", "note": "Correlation matrix derived from cov-matrix." },
+      "standardize":   { "call": "Stats.standardize mat end",   "args": ["mat:Matrix"], "returns": "Matrix", "note": "Each column z-scored (sample mean/stddev)." },
+      "ols":           { "call": "Stats.ols x ys end",          "args": ["x:Matrix", "ys:List"], "returns": "List", "note": "Least-squares coefficients via XᵀX b = Xᵀy. Rows of X must match length of y; a rank-deficient system raises singular. Prepend a 1s column for an intercept." }
     }
   },
   "namespaces": {

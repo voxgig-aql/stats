@@ -1,6 +1,6 @@
 # Smoke test for the stats module. Imports the library and walks
 # through every public word — a successful end-to-end run (no errors) is
-# the pass condition.
+# the pass condition. Stats words are called verb-first.
 #
 # Prints are written one value per statement (`print (value) end`):
 # `print` collects a forward argument, so chained `"label" print
@@ -17,63 +17,63 @@ print ("--- stats smoke demo ---") end
 def data [2 4 4 4 5 5 7 9]
 
 # --- descriptive (a List works directly) ---------------------------
-print (`count:     ${(data Stats.count end)}`) end
-print (`sum:       ${(data Stats.sum end)}`) end
-print (`mean:      ${(data Stats.mean end)}`) end
-print (`variance:  ${(data Stats.variance end)}`) end
-print (`pvariance: ${(data Stats.pvariance end)}`) end
-print (`stddev:    ${(data Stats.stddev end)}`) end
-print (`pstddev:   ${(data Stats.pstddev end)}`) end
-print (`min:       ${(data Stats.min end)}`) end
-print (`max:       ${(data Stats.max end)}`) end
-print (`range:     ${(data Stats.range end)}`) end
-print (`skewness:  ${(data Stats.skewness end)}`) end
-print (`kurtosis:  ${(data Stats.kurtosis end)}`) end
+print (`count:     ${(Stats.count data end)}`) end
+print (`sum:       ${(Stats.sum data end)}`) end
+print (`mean:      ${(Stats.mean data end)}`) end
+print (`variance:  ${(Stats.variance data end)}`) end
+print (`pvariance: ${(Stats.pvariance data end)}`) end
+print (`stddev:    ${(Stats.stddev data end)}`) end
+print (`pstddev:   ${(Stats.pstddev data end)}`) end
+print (`min:       ${(Stats.min data end)}`) end
+print (`max:       ${(Stats.max data end)}`) end
+print (`range:     ${(Stats.range data end)}`) end
+print (`skewness:  ${(Stats.skewness data end)}`) end
+print (`kurtosis:  ${(Stats.kurtosis data end)}`) end
 
 # --- order statistics ----------------------------------------------
-print (`median:    ${(data Stats.median end)}`) end
-print (`q90:       ${(data Stats.quantile 0.9 end)}`) end
-print (`iqr:       ${(data Stats.iqr end)}`) end
-print (`mode:      ${(data Stats.mode end)}`) end
+print (`median:    ${(Stats.median data end)}`) end
+print (`q90:       ${(Stats.quantile data 0.9 end)}`) end
+print (`iqr:       ${(Stats.iqr data end)}`) end
+print (`mode:      ${(Stats.mode data end)}`) end
 
 # --- bivariate -----------------------------------------------------
 def xs [1 2 3 4 5]
 def ys [2 4 5 4 5]
-print (`covariance:  ${(xs Stats.covariance ys end)}`) end
-print (`pcovariance: ${(xs Stats.pcovariance ys end)}`) end
-print (`correlation: ${(xs Stats.correlation ys end)}`) end
-print (`linreg:      ${(xs Stats.linreg ys end)}`) end
+print (`covariance:  ${(Stats.covariance xs ys end)}`) end
+print (`pcovariance: ${(Stats.pcovariance xs ys end)}`) end
+print (`correlation: ${(Stats.correlation xs ys end)}`) end
+print (`linreg:      ${(Stats.linreg xs ys end)}`) end
 
 # --- distributions / scores ----------------------------------------
-print (`normal-pdf(1): ${(1 Stats.normal-pdf {mu: 0.0, sigma: 1.0} end)}`) end
-print (`normal-cdf(0): ${(0 Stats.normal-cdf {mu: 0.0, sigma: 1.0} end)}`) end
-print (`zscores:       ${([1 2 3] Stats.zscores end)}`) end
+print (`normal-pdf(1): ${(Stats.normal-pdf 1 {mu: 0.0, sigma: 1.0} end)}`) end
+print (`normal-cdf(0): ${(Stats.normal-cdf 0 {mu: 0.0, sigma: 1.0} end)}`) end
+print (`zscores:       ${(Stats.zscores [1 2 3] end)}`) end
 
 # --- accumulator: build / push / merge / encode / decode -----------
-def acc ([10 20] Stats.summary end)
-def _push (acc Stats.push-all [30] end)
-def _push2 (acc Stats.push 40 end)
-print (`acc-mean:  ${(acc Stats.mean end)} (n=${(acc Stats.count end)})`) end
+def acc (Stats.summary [10 20] end)
+def _push (Stats.push-all acc [30] end)
+def _push2 (Stats.push acc 40 end)
+print (`acc-mean:  ${(Stats.mean acc end)} (n=${(Stats.count acc end)})`) end
 
-def a ([1 2 3 4] Stats.summary end)
-def b ([5 6 7 8] Stats.summary end)
-def merged (a Stats.merge b end)
-print (`merged-mean: ${(merged Stats.mean end)} merged-var: ${(merged Stats.variance end)}`) end
+def a (Stats.summary [1 2 3 4] end)
+def b (Stats.summary [5 6 7 8] end)
+def merged (Stats.merge a b end)
+print (`merged-mean: ${(Stats.mean merged end)} merged-var: ${(Stats.variance merged end)}`) end
 
-def snapshot (merged Stats.encode end)
+def snapshot (Stats.encode merged end)
 print (`encode:      ${snapshot}`) end
-def back (snapshot Stats.decode end)
-print (`decoded-mean: ${(back Stats.mean end)}`) end
+def back (Stats.decode snapshot end)
+print (`decoded-mean: ${(Stats.mean back end)}`) end
 
 # --- matrix / dataset (rows = observations, cols = variables) ------
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
-print (`col-means:   ${(mat Stats.col-means end)}`) end
-print (`col-stddevs: ${(mat Stats.col-stddevs end)}`) end
-print (`cov-matrix:  ${(mat Stats.cov-matrix end)}`) end
-print (`cor-matrix:  ${(mat Stats.cor-matrix end)}`) end
-print (`standardized rows=${(MatrixUtil.rows (mat Stats.standardize end))}`) end
+print (`col-means:   ${(Stats.col-means mat end)}`) end
+print (`col-stddevs: ${(Stats.col-stddevs mat end)}`) end
+print (`cov-matrix:  ${(Stats.cov-matrix mat end)}`) end
+print (`cor-matrix:  ${(Stats.cor-matrix mat end)}`) end
+print (`standardized rows=${(MatrixUtil.rows (Stats.standardize mat end))}`) end
 
 # --- ordinary least squares ----------------------------------------
 # design = [1, x]; recovers intercept and slope of y = -0.5 + 2x.
 def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
-print (`ols coeffs:  ${(design Stats.ols [2 3 5 8] end)}`) end
+print (`ols coeffs:  ${(Stats.ols design [2 3 5 8] end)}`) end

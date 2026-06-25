@@ -188,7 +188,7 @@ finally type-checked clean in both directions needed a union parameter
 ```aql
 def as-summary fn [
   [x:(List tor Summary)] [Summary] [
-    if (x is List) [x build-summary] [x]   # `is List`; `is Summary`-negative still errored
+    if (x is List) [build-summary x] [x]   # `is List`; `is Summary`-negative still errored
   ]
 ]
 ```

@@ -11,7 +11,7 @@ read nothing else, read [The one calling rule](#the-one-calling-rule) and
 Descriptive, inferential, and matrix statistics. The public surface is
 the `Stats` namespace plus the `Summary` type. There are two ways in:
 
-- **Pure functions over a List** — `[1 2 3] Stats.mean end`. Simple,
+- **Pure functions over a List** — `Stats.mean [1 2 3] end`. Simple,
   and the only way to get order statistics (median, quantile, mode).
 - **A streaming `Summary` accumulator** — build one, `push` values into
   it, `merge` two of them, `encode`/`decode` it. It keeps running moments
@@ -40,25 +40,29 @@ import "./stats.aql"
 ## The one calling rule
 
 AQL is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
-A call is written:
+A `Stats` call is written **verb-first** (the all-forward form):
 
 ```
-receiver Stats.verb arg1 arg2 end
+Stats.verb data arg1 arg2 end
 ```
 
-— the **receiver/data comes first**, then the verb, then any extra
-arguments, and the call is **terminated with `end`** (or wrapped in
-parens). Without a terminator the verb can swallow whatever token
-follows it and you get wrong results or a dispatch error.
+— the **verb comes first**, then the data, then any extra arguments, and
+the call is **terminated with `end`** (or wrapped in parens). Without a
+terminator the verb can swallow whatever token follows it and you get
+wrong results or a dispatch error.
 
 ```aql
 def xs [2 4 4 4 5 5 7 9]
-print ((xs Stats.mean   end)) end    # => 5.0
-print ((xs Stats.median end)) end    # => 4.5
+print ((Stats.mean   xs end)) end    # => 5.0
+print ((Stats.median xs end)) end    # => 4.5
 ```
 
-`(… )` parentheses count as a terminator, so `(xs Stats.mean)` is fine
+`(… )` parentheses count as a terminator, so `(Stats.mean xs)` is fine
 too; use `end` for top-level statements that aren't already wrapped.
+(The core array words `each`/`fold`, indexing `get`, and the matrix
+accessors `MatrixUtil.row`/`col` read their subject from the *stack* and
+so stay subject-first — `xs get (i)`, `mat MatrixUtil.col j` — that is
+their native form.)
 
 ## API reference (exact call shapes)
 
@@ -69,63 +73,63 @@ Every **descriptive** word accepts either a `List` of numbers or a
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `xs Stats.summary end` | `Summary` | Build from a List (`[]` ⇒ empty). |
-| `s Stats.push x end` | the **same** `s` (mutated) | Add one observation. |
-| `s Stats.push-all xs end` | the **same** `s` (mutated) | Add every element of a List. |
-| `a Stats.merge b end` | the **same** `a` (mutated) | Combine `b`'s moments into `a`. Always compatible. |
-| `s Stats.encode end` | `String` | jsonic snapshot of the moments. |
-| `text Stats.decode end` | `Summary` | Rebuild from a snapshot; bad text raises `bad_payload`. |
+| `Stats.summary xs end` | `Summary` | Build from a List (`[]` ⇒ empty). |
+| `Stats.push s x end` | the **same** `s` (mutated) | Add one observation. |
+| `Stats.push-all s xs end` | the **same** `s` (mutated) | Add every element of a List. |
+| `Stats.merge a b end` | the **same** `a` (mutated) | Combine `b`'s moments into `a`. Always compatible. |
+| `Stats.encode s end` | `String` | jsonic snapshot of the moments. |
+| `Stats.decode text end` | `Summary` | Rebuild from a snapshot; bad text raises `bad_payload`. |
 
 ### Descriptive (List **or** Summary)
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `x Stats.count end` | `Integer` | Observation count; empty ⇒ `0`. |
-| `x Stats.sum end` | `Float` | Total. |
-| `x Stats.mean end` | `Float` | Needs ≥ 1 value. |
-| `x Stats.variance end` | `Float` | **Sample** (n-1). Needs ≥ 2 values. |
-| `x Stats.pvariance end` | `Float` | **Population** (n). |
-| `x Stats.stddev end` / `x Stats.pstddev end` | `Float` | Sample / population std dev. |
-| `x Stats.min end` / `x Stats.max end` / `x Stats.range end` | `Float` | Extremes and `max - min`. |
-| `x Stats.skewness end` | `Float` | Biased g1. |
-| `x Stats.kurtosis end` | `Float` | Biased **excess** g2. |
+| `Stats.count x end` | `Integer` | Observation count; empty ⇒ `0`. |
+| `Stats.sum x end` | `Float` | Total. |
+| `Stats.mean x end` | `Float` | Needs ≥ 1 value. |
+| `Stats.variance x end` | `Float` | **Sample** (n-1). Needs ≥ 2 values. |
+| `Stats.pvariance x end` | `Float` | **Population** (n). |
+| `Stats.stddev x end` / `Stats.pstddev x end` | `Float` | Sample / population std dev. |
+| `Stats.min x end` / `Stats.max x end` / `Stats.range x end` | `Float` | Extremes and `max - min`. |
+| `Stats.skewness x end` | `Float` | Biased g1. |
+| `Stats.kurtosis x end` | `Float` | Biased **excess** g2. |
 
 ### Order statistics (List only)
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `xs Stats.median end` | `Float` | |
-| `xs Stats.quantile q end` | `Float` | `q` in `[0,1]`, linear interpolation (type-7). |
-| `xs Stats.iqr end` | `Float` | Q3 − Q1. |
-| `xs Stats.mode end` | `Float` | Most frequent; smallest value on a tie. |
+| `Stats.median xs end` | `Float` | |
+| `Stats.quantile xs q end` | `Float` | `q` in `[0,1]`, linear interpolation (type-7). |
+| `Stats.iqr xs end` | `Float` | Q3 − Q1. |
+| `Stats.mode xs end` | `Float` | Most frequent; smallest value on a tie. |
 
 ### Bivariate (two Lists)
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `xs Stats.covariance ys end` | `Float` | **Sample**. |
-| `xs Stats.pcovariance ys end` | `Float` | **Population**. |
-| `xs Stats.correlation ys end` | `Float` | Pearson r in `[-1, 1]`. |
-| `xs Stats.linreg ys end` | `Map` | `{slope, intercept, r, r2}` — `xs` predictor, `ys` response. |
+| `Stats.covariance xs ys end` | `Float` | **Sample**. |
+| `Stats.pcovariance xs ys end` | `Float` | **Population**. |
+| `Stats.correlation xs ys end` | `Float` | Pearson r in `[-1, 1]`. |
+| `Stats.linreg xs ys end` | `Map` | `{slope, intercept, r, r2}` — `xs` predictor, `ys` response. |
 
 ### Distributions / scores
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `xs Stats.zscores end` | `List` | Sample-standardised values. |
-| `x Stats.normal-pdf {mu, sigma} end` | `Float` | `sigma > 0`. |
-| `x Stats.normal-cdf {mu, sigma} end` | `Float` | erf approximation (abs error ≈ 1.5e-7). |
+| `Stats.zscores xs end` | `List` | Sample-standardised values. |
+| `Stats.normal-pdf x {mu, sigma} end` | `Float` | `sigma > 0`. |
+| `Stats.normal-cdf x {mu, sigma} end` | `Float` | erf approximation (abs error ≈ 1.5e-7). |
 
 ### Matrix / dataset (rows = observations, cols = variables)
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `mat Stats.col-means end` | `List` | Per-column means. |
-| `mat Stats.col-variances end` / `mat Stats.col-stddevs end` | `List` | Per-column **sample** variance / std dev. |
-| `mat Stats.cov-matrix end` | `Matrix` | **Sample** covariance matrix. Needs ≥ 2 rows. |
-| `mat Stats.cor-matrix end` | `Matrix` | Correlation matrix. |
-| `mat Stats.standardize end` | `Matrix` | Each column z-scored. |
-| `x Stats.ols ys end` | `List` | Least-squares coefficients (`x` = design Matrix). |
+| `Stats.col-means mat end` | `List` | Per-column means. |
+| `Stats.col-variances mat end` / `Stats.col-stddevs mat end` | `List` | Per-column **sample** variance / std dev. |
+| `Stats.cov-matrix mat end` | `Matrix` | **Sample** covariance matrix. Needs ≥ 2 rows. |
+| `Stats.cor-matrix mat end` | `Matrix` | Correlation matrix. |
+| `Stats.standardize mat end` | `Matrix` | Each column z-scored. |
+| `Stats.ols x ys end` | `List` | Least-squares coefficients (`x` = design Matrix). |
 
 Construct `Summary` values **only** through `Stats.summary`. Treat
 `Summary` fields as read-only; mutate through the namespace words.
@@ -148,39 +152,39 @@ Descriptive statistics over a List:
 ```aql
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
-print ((xs Stats.mean     end)) end   # => 5.0
-print ((xs Stats.variance end)) end   # => 4.571428571428571 (sample)
-print ((xs Stats.median   end)) end   # => 4.5
-print ((xs Stats.quantile 0.9 end)) end   # => 7.6
+print ((Stats.mean     xs end)) end   # => 5.0
+print ((Stats.variance xs end)) end   # => 4.571428571428571 (sample)
+print ((Stats.median   xs end)) end   # => 4.5
+print ((Stats.quantile xs 0.9 end)) end   # => 7.6
 ```
 
 The streaming accumulator — build, push, query:
 
 ```aql
-def s ([1 2 3 4] Stats.summary end)
-def _ (s Stats.push-all [5 6 7 8] end)
-def _2 (s Stats.push 9 end)
-print ((s Stats.count end)) end       # => 9
-print ((s Stats.mean  end)) end       # => 5.0
+def s (Stats.summary [1 2 3 4] end)
+def _ (Stats.push-all s [5 6 7 8] end)
+def _2 (Stats.push s 9 end)
+print ((Stats.count s end)) end       # => 9
+print ((Stats.mean  s end)) end       # => 5.0
 ```
 
 Merge is O(1) and gives the same answer as pooling the data — useful for
 parallel/streaming aggregation:
 
 ```aql
-def a ([1 2 3 4] Stats.summary end)
-def b ([5 6 7 8] Stats.summary end)
-def merged (a Stats.merge b end)
-print ((merged Stats.mean     end)) end   # => 4.5
-print ((merged Stats.variance end)) end   # => 6.0
+def a (Stats.summary [1 2 3 4] end)
+def b (Stats.summary [5 6 7 8] end)
+def merged (Stats.merge a b end)
+print ((Stats.mean     merged end)) end   # => 4.5
+print ((Stats.variance merged end)) end   # => 6.0
 ```
 
 Persist and reload a Summary through the snapshot string:
 
 ```aql
-def snap (merged Stats.encode end)
-def back (snap Stats.decode end)
-print ((back Stats.mean end)) end          # => 4.5
+def snap (Stats.encode merged end)
+def back (Stats.decode snap end)
+print ((Stats.mean back end)) end          # => 4.5
 ```
 
 Bivariate and regression:
@@ -188,8 +192,8 @@ Bivariate and regression:
 ```aql
 def x [1 2 3 4 5]
 def y [2 4 5 4 5]
-print ((x Stats.correlation y end)) end    # => 0.7745966692414834
-def lr (x Stats.linreg y end)
+print ((Stats.correlation x y end)) end    # => 0.7745966692414834
+def lr (Stats.linreg x y end)
 print ((lr get slope)) end                 # => 0.6
 print ((lr get intercept)) end             # => 2.2
 ```
@@ -200,8 +204,8 @@ Dataset statistics over a Matrix (import matrix-util yourself):
 import "aql:matrix-util"
 import "./stats.aql"
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
-print ((mat Stats.col-means end)) end      # => [4.0 7.5]
-def cov (mat Stats.cov-matrix end)         # => Matrix(2x2)
+print ((Stats.col-means mat end)) end      # => [4.0 7.5]
+def cov (Stats.cov-matrix mat end)         # => Matrix(2x2)
 ```
 
 Multiple linear regression via OLS (prepend a 1s column for the
@@ -211,15 +215,15 @@ intercept):
 import "aql:matrix-util"
 import "./stats.aql"
 def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
-def coef (design Stats.ols [2 3 5 8] end)
+def coef (Stats.ols design [2 3 5 8] end)
 print (coef) end                           # => [-0.5 2.0]  (intercept, slope)
 ```
 
 Guard a misuse (an order statistic on a Summary raises `needs_data`):
 
 ```aql
-def s ([1 2 3] Stats.summary end)
-def code (do [s Stats.median end] error [ get code ])
+def s (Stats.summary [1 2 3] end)
+def code (do [Stats.median s end] error [ get code ])
 print (code) end                           # => needs_data
 ```
 
@@ -227,15 +231,15 @@ print (code) end                           # => needs_data
 
 | ✗ Don't write | ✓ Write | Why |
 |---------------|---------|-----|
-| `Stats.mean(xs)` | `xs Stats.mean end` | No `f(a,b)` syntax in AQL. |
-| `xs.mean()` | `xs Stats.mean end` | No method-call syntax. |
-| `xs Stats.mean` (no terminator, mid-expression) | `xs Stats.mean end` | The verb swallows the next token without `end`/parens. |
-| `summary Stats.median end` | pass the raw **List** to `median` | Order statistics need the data; a `Summary` raises `needs_data`. |
+| `Stats.mean(xs)` | `Stats.mean xs end` | No `f(a,b)` syntax in AQL. |
+| `xs.mean()` | `Stats.mean xs end` | No method-call syntax. |
+| `Stats.mean xs` (no terminator, mid-expression) | `Stats.mean xs end` | The verb swallows the next token without `end`/parens. |
+| `Stats.median s end` on a Summary | pass the raw **List** to `median` | Order statistics need the data; a `Summary` raises `needs_data`. |
 | treat `Stats.variance` as population variance | `Stats.pvariance` for population | Bare `variance`/`stddev` are **sample** (n-1). |
-| keep a pre-`push` copy of a Summary as "before" | `push`/`merge` mutate in place | The receiver and the returned value are the **same** object. |
+| keep a pre-`push` copy of a Summary as "before" | `push`/`merge` mutate in place | The argument and the returned value are the **same** object. |
 | `xs get i` with a variable `i` | `xs get (i)` | A bare word after `get` is read as an atom key; parenthesise variable indices. |
 | call the dataset words without `import "aql:matrix-util"` in your script | add the import yourself | The library's deps are not re-exported to callers. |
-| `make Summary {…}` | `xs Stats.summary end` | Construct only via `Stats.summary`. |
+| `make Summary {…}` | `Stats.summary xs end` | Construct only via `Stats.summary`. |
 | `"label" print (v) print` | `print (value) end`, one per statement | `print` collects a forward argument; chains print out of order. |
 
 ## Where to look next

@@ -10,9 +10,9 @@ matrix statistics behind a single `Stats` namespace, plus a streaming
 import "./stats.aql"
 
 def xs [2 4 4 4 5 5 7 9]
-print ((xs Stats.mean   end)) end   # => 5.0
-print ((xs Stats.median end)) end   # => 4.5
-print ((xs Stats.stddev end)) end   # => 2.138089935299395  (sample)
+print ((Stats.mean   xs end)) end   # => 5.0
+print ((Stats.median xs end)) end   # => 4.5
+print ((Stats.stddev xs end)) end   # => 2.138089935299395  (sample)
 ```
 
 > **Calling this library from an AI coding agent?** Read
@@ -27,8 +27,8 @@ print ((xs Stats.stddev end)) end   # => 2.138089935299395  (sample)
 get order statistics:
 
 ```aql
-print (([1 2 3 4 5] Stats.variance end)) end       # => 2.5 (sample)
-print (([1 2 3 4 5] Stats.quantile 0.9 end)) end   # => 4.6
+print ((Stats.variance [1 2 3 4 5] end)) end       # => 2.5 (sample)
+print ((Stats.quantile [1 2 3 4 5] 0.9 end)) end   # => 4.6
 ```
 
 **A streaming `Summary` accumulator** — keeps running Welford moments, so
@@ -36,10 +36,10 @@ mean/variance/skewness/kurtosis cost one pass and two summaries merge in
 O(1) (ideal for parallel or streaming aggregation):
 
 ```aql
-def a ([1 2 3 4] Stats.summary end)
-def b ([5 6 7 8] Stats.summary end)
-def merged (a Stats.merge b end)
-print ((merged Stats.mean end)) end                # => 4.5
+def a (Stats.summary [1 2 3 4] end)
+def b (Stats.summary [5 6 7 8] end)
+def merged (Stats.merge a b end)
+print ((Stats.mean merged end)) end                # => 4.5
 ```
 
 The dataset words operate on an `aql:matrix-util` Matrix (rows =
@@ -48,8 +48,7 @@ correlation matrices, standardization, and ordinary least squares.
 
 ## Documentation
 
-The docs follow the [Diátaxis](https://diataxis.fr) framework — four
-modes, each serving a different need:
+The docs are organised into four modes, each serving a different need:
 
 | | Mode | Read this when you want to… |
 |--|------|----------------------------|
@@ -65,15 +64,15 @@ and just want the API? Jump to the [Reference](docs/reference.md).
 
 | Group | Words |
 |-------|-------|
-| Accumulator | `xs Stats.summary` · `s Stats.push x` · `s Stats.push-all xs` · `a Stats.merge b` · `s Stats.encode` · `text Stats.decode` |
+| Accumulator | `Stats.summary xs` · `Stats.push s x` · `Stats.push-all s xs` · `Stats.merge a b` · `Stats.encode s` · `Stats.decode text` |
 | Descriptive (List or Summary) | `mean` · `sum` · `count` · `min` · `max` · `range` · `variance`/`pvariance` · `stddev`/`pstddev` · `skewness` · `kurtosis` |
-| Order statistics (List) | `median` · `quantile q` · `iqr` · `mode` |
-| Bivariate | `xs Stats.covariance ys` · `pcovariance` · `correlation` · `linreg` |
-| Distributions | `xs Stats.zscores` · `x Stats.normal-pdf {mu, sigma}` · `normal-cdf` |
-| Matrix / dataset | `col-means` · `col-variances` · `col-stddevs` · `cov-matrix` · `cor-matrix` · `standardize` · `x Stats.ols ys` |
+| Order statistics (List) | `median` · `quantile xs q` · `iqr` · `mode` |
+| Bivariate | `Stats.covariance xs ys` · `pcovariance` · `correlation` · `linreg` |
+| Distributions | `Stats.zscores xs` · `Stats.normal-pdf x {mu, sigma}` · `normal-cdf` |
+| Matrix / dataset | `col-means` · `col-variances` · `col-stddevs` · `cov-matrix` · `cor-matrix` · `standardize` · `Stats.ols x ys` |
 
-Every call is receiver-first and ends with `end`:
-`receiver Stats.verb args… end`. Unqualified `variance`/`stddev`/
+Every call is verb-first and ends with `end`:
+`Stats.verb data args… end`. Unqualified `variance`/`stddev`/
 `covariance` are **sample** statistics (n-1); the `p`-prefixed ones are
 **population**. Full details are in the [Reference](docs/reference.md).
 
@@ -111,7 +110,7 @@ test/stats_unit_spec.aql   example-based unit tests — declarative spec format
 test/stats_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/stats_prop_spec.aql   property-based tests — declarative spec format
 test/stats_smoke_test.aql  end-to-end smoke run over every public word
-docs/                      Diátaxis documentation (above)
+docs/                      documentation (above)
 dx-report.md               developer-experience notes (current pin: aql @ 12a44e0)
 proposals/                 language proposals raised from this module's DX
 ```
