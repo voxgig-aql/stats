@@ -363,7 +363,7 @@ equivalence, encode/decode round-trips) at a tuned run budget.
 
 Each assertion-bearing suite ends by asserting `Test.fail-count` is `0`
 and prints `all green`, so a failure makes `aql` exit non-zero — which
-is exactly what the [CI workflow](../ci/test.yml) checks on every push
+is exactly what the [CI workflow](../.github/workflows/test.yml) checks on every push
 and pull request.
 
 One more check sits outside this set. `test/divergence/` runs every

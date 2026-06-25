@@ -26,7 +26,7 @@ set -uo pipefail
 # aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new) —
 # the same commit the library now pins. It fixes the two regressions this
 # library's reports flagged. This is the same commit the library now pins
-# (see ci/test.yml AQL_REF) — `aql:matrix-util` and the gradual-Any /
+# (see .github/workflows/test.yml AQL_REF) — `aql:matrix-util` and the gradual-Any /
 # union-narrowing behaviour this stats module relies on are present, and
 # all five suites interpret, check (0 errors), and compile identically to
 # the interpreter on it. Bump in lockstep with the workflow AQL_REF.
