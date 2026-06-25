@@ -1,7 +1,7 @@
 {
   "name": "stats",
   "version": "0.1.0",
-  "aql_ref": "12a44e0",
+  "aql_ref": "f5e590f",
   "description": "Statistics for AQL: descriptive, inferential, and matrix statistics exposed as the single `Stats` namespace, plus a streaming `Summary` accumulator. Descriptive words accept a List of numbers or a Summary; order statistics take a List only; the dataset words operate on an aql:matrix-util Matrix.",
   "conventions": {
     "import": "import \"./stats.aql\"  — no `end` needed; the library imports its own aql:* deps (math-util, array-util, matrix-util, struct-util). Callers who BUILD a Matrix to pass to the dataset words must `import \"aql:matrix-util\"` themselves — the MatrixUtil binding is not re-exported.",

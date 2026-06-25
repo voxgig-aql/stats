@@ -22,7 +22,7 @@ env:
   # this module is verified against — the build with `aql:matrix-util` and
   # the gradual-Any / union-narrowing behaviour the library relies on,
   # where all five suites interpret, check (0 errors), and compile clean.
-  AQL_REF: 12a44e0c6ca3f49cd35a871b573fd96bc13d7fd6
+  AQL_REF: f5e590f1418ef2b4f5c6179321a89b5723b63201
 
 jobs:
   test:
