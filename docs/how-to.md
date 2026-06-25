@@ -76,7 +76,8 @@ print ((xs Stats.range end)) end    # => 7.0
 
 The full descriptive set is `count`, `sum`, `mean`, `variance`,
 `pvariance`, `stddev`, `pstddev`, `min`, `max`, `range`, `skewness`,
-`kurtosis` — all listed in the [Reference](reference.md#descriptive).
+`kurtosis` — all listed in the
+[Reference](reference.md#descriptive-words-list--summary).
 
 ---
 
