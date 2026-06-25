@@ -1,0 +1,197 @@
+# stats direct unit tests using aql:test's imperative API.
+#
+# The sibling file `test/stats_unit_spec.aql` covers the same kind of
+# example-based checks through the declarative spec surface
+# (`Test.run-spec`). Exact-valued statistics are asserted with
+# `Assert.equal`; the irrational ones (stddev, correlation, the normal
+# distribution) are checked within a tolerance via the `close` helper.
+#
+# Run:
+#   aql test/stats_unit_test.aql
+
+
+import "aql:test" end
+import "aql:math-util" end
+import "aql:matrix-util" end
+import "./stats.aql" end
+
+
+# Float tolerance: |a - b| < 1e-9. Receiver is the actual value.
+def close fn [
+  [b:Float a:Float] [Boolean] [
+    ((a sub b) MathUtil.abs) lt 0.000000001
+  ]
+]
+
+# Looser tolerance (1e-5) for the erf-approximation-backed normal CDF.
+def near fn [
+  [b:Float a:Float] [Boolean] [
+    ((a sub b) MathUtil.abs) lt 0.00001
+  ]
+]
+
+
+# --- central tendency & dispersion (exact) -------------------------
+
+[
+  def xs [1 2 3 4 5]
+  3.0  (xs Stats.mean end)      Assert.equal end
+  2.0  (xs Stats.pvariance end) Assert.equal end
+  2.5  (xs Stats.variance end)  Assert.equal end
+  15.0 (xs Stats.sum end)       Assert.equal end
+  5    (xs Stats.count end)     Assert.equal end
+  1.0  (xs Stats.min end)       Assert.equal end
+  5.0  (xs Stats.max end)       Assert.equal end
+  4.0  (xs Stats.range end)     Assert.equal end
+] "central-tendency" Test.test end
+
+
+# --- standard deviation (within tolerance) -------------------------
+
+[
+  def b [2 4 4 4 5 5 7 9]
+  true ((b Stats.pvariance end) close 4.0) Assert.ok end
+  true ((b Stats.pstddev end) close 2.0) Assert.ok end
+  true ((b Stats.stddev end) close 2.138089935299395) Assert.ok end
+] "stddev" Test.test end
+
+
+# --- order statistics (exact) --------------------------------------
+
+[
+  def b [2 4 4 4 5 5 7 9]
+  4.5 (b Stats.median end)        Assert.equal end
+  4.0 (b Stats.quantile 0.25 end) Assert.equal end
+  5.5 (b Stats.quantile 0.75 end) Assert.equal end
+  1.5 (b Stats.iqr end)           Assert.equal end
+  4.0 (b Stats.mode end)          Assert.equal end
+] "order-statistics" Test.test end
+
+
+# --- shape: skewness & kurtosis (within tolerance) -----------------
+
+[
+  def b [2 4 4 4 5 5 7 9]
+  true ((b Stats.skewness end) close 0.65625)  Assert.ok end
+  true ((b Stats.kurtosis end) close -0.21875) Assert.ok end
+] "shape" Test.test end
+
+
+# --- bivariate -----------------------------------------------------
+
+[
+  def x [1 2 3 4 5]
+  def y [2 4 5 4 5]
+  1.5 (x Stats.covariance y end)  Assert.equal end
+  1.2 (x Stats.pcovariance y end) Assert.equal end
+  true ((x Stats.correlation y end) close 0.7745966692414834) Assert.ok end
+] "bivariate" Test.test end
+
+
+# --- simple linear regression --------------------------------------
+
+[
+  def x [1 2 3 4 5]
+  def y [2 4 5 4 5]
+  def lr (x Stats.linreg y end)
+  true ((lr get slope)     close 0.6) Assert.ok end
+  true ((lr get intercept) close 2.2) Assert.ok end
+  true ((lr get r2)        close 0.6) Assert.ok end
+] "linreg" Test.test end
+
+
+# --- distributions / scores ----------------------------------------
+
+[
+  true ((1 Stats.normal-pdf {mu: 0.0, sigma: 1.0} end) close 0.24197072451914337) Assert.ok end
+  true ((0 Stats.normal-cdf {mu: 0.0, sigma: 1.0} end) near 0.5)    Assert.ok end
+  true ((1.96 Stats.normal-cdf {mu: 0.0, sigma: 1.0} end) near 0.9750021048517796) Assert.ok end
+  def z ([1 2 3] Stats.zscores end)
+  true ((z get 0) close -1.0) Assert.ok end
+  true ((z get 1) close 0.0)  Assert.ok end
+  true ((z get 2) close 1.0)  Assert.ok end
+] "distributions" Test.test end
+
+
+# --- accumulator: build / push / merge -----------------------------
+
+[
+  def s ([] Stats.summary end)
+  def _ (s Stats.push-all [1 2 3 4] end)
+  4   (s Stats.count end) Assert.equal end
+  2.5 (s Stats.mean end)  Assert.equal end
+  def _2 (s Stats.push 5 end)
+  5   (s Stats.count end) Assert.equal end
+  3.0 (s Stats.mean end)  Assert.equal end
+] "accumulator" Test.test end
+
+
+[
+  def a ([1 2 3 4] Stats.summary end)
+  def b ([5 6 7 8] Stats.summary end)
+  def m (a Stats.merge b end)
+  8   (m Stats.count end)    Assert.equal end
+  4.5 (m Stats.mean end)     Assert.equal end
+  6.0 (m Stats.variance end) Assert.equal end
+] "merge-moments" Test.test end
+
+
+# --- encode / decode round-trip ------------------------------------
+
+[
+  def s ([1 2 3 4 5 6 7 8] Stats.summary end)
+  def back ((s Stats.encode end) Stats.decode end)
+  (s Stats.mean end)     (back Stats.mean end)     Assert.equal end
+  (s Stats.variance end) (back Stats.variance end) Assert.equal end
+  (s Stats.count end)    (back Stats.count end)    Assert.equal end
+] "encode-decode" Test.test end
+
+
+# --- matrix / dataset words ----------------------------------------
+
+[
+  def mat (MatrixUtil.create [[1 1] [2 2] [3 3]])
+  def means (mat Stats.col-means end)
+  2.0 (means get 0) Assert.equal end
+  2.0 (means get 1) Assert.equal end
+  def cov (mat Stats.cov-matrix end)
+  1.0 (cov MatrixUtil.elem 0 0) Assert.equal end
+  1.0 (cov MatrixUtil.elem 1 0) Assert.equal end
+] "dataset" Test.test end
+
+
+# --- ordinary least squares ----------------------------------------
+
+[
+  # design = [1, x]; the fit recovers intercept -0.5 and slope 2.0.
+  def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
+  def coef (design Stats.ols [2 3 5 8] end)
+  true ((coef get 0) close -0.5) Assert.ok end
+  true ((coef get 1) close 2.0)  Assert.ok end
+] "ols" Test.test end
+
+
+# --- error codes ---------------------------------------------------
+
+[
+  bad_input/q  ((do [[] Stats.mean end]) get code) Assert.equal end
+  bad_input/q  ((do [[5] Stats.variance end]) get code) Assert.equal end
+  bad_input/q  ((do [[1 2 3] Stats.quantile 1.5 end]) get code) Assert.equal end
+  bad_input/q  ((do [[1 2 3] Stats.covariance [1 2] end]) get code) Assert.equal end
+  needs_data/q ((do [([1 2 3] Stats.summary end) Stats.median end]) get code) Assert.equal end
+  bad_payload/q ((do ["not a snapshot {" Stats.decode end]) get code) Assert.equal end
+] "error-codes" Test.test end
+
+
+[
+  def design (MatrixUtil.create [[1 1] [1 1] [1 1]])
+  singular/q ((do [design Stats.ols [1 2 3] end]) get code) Assert.equal end
+] "ols-singular" Test.test end
+
+
+# --- summary -------------------------------------------------------
+
+"---" print
+"fail count: " print Test.fail-count end print
+0 Test.fail-count end Assert.equal end
+"all green" print

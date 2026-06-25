@@ -1,9 +1,11 @@
-# Tutorial: your first bloom filter
+# Tutorial: your first statistics session
 
 This is a hands-on lesson. By the end you will have built a small AQL
-script that tracks which usernames it has seen, queried it, and watched
-a false positive appear. You need no prior knowledge of bloom filters —
-just a working `aql` binary (see
+script that summarises a column of numbers, reads its centre and spread,
+streams data through a running accumulator, merges two of them, and
+finishes with a tiny dataset and a correlation. You need no prior
+statistics beyond what "mean" and "standard deviation" mean — just a
+working `aql` binary (see
 [How-to → Install and run](how-to.md#install-and-run-aql)) and this
 repository checked out.
 
@@ -15,160 +17,183 @@ build it up in pieces and run it after each step.
 
 ---
 
-## Step 1 — import the module and make a filter
+## Step 1 — import the module and summarise a List
 
-Create a file `seen.aql` next to `bloom.aql` with this content:
+Create a file `explore.aql` next to `stats.aql` with this content:
 
 ```aql
-import "./bloom.aql"
+import "./stats.aql"
 
 # Print one value per statement, fully grouped — `print (value) end` —
 # and output appears in source order. (Chained `(a) print (b) print`
 # pairs print out of order, because print collects a forward argument.)
 
-def seen ({n: 10000, p: 0.01} Bloom.make end)
-print (`params:      ${(seen Bloom.params end)}`) end
+def data [2 4 4 4 5 5 7 9]
+print (`count: ${(data Stats.count end)}`) end
+print (`mean:  ${(data Stats.mean end)}`) end
+print (`min:   ${(data Stats.min end)}`) end
+print (`max:   ${(data Stats.max end)}`) end
 ```
 
-`Bloom.make` takes an options map: `n` is how many distinct items you
-expect (10 000), and `p` is the false-positive rate you will tolerate
-(1 %). Run it:
+Every descriptive word takes the data **first**, then the verb, then
+ends with `end`: `data Stats.mean end`. That is the whole calling
+convention — receiver first, no `f(x)` and no `x.f()`. Run it:
 
 ```console
-$ aql seen.aql
-params:      {k:7 m:95851 n:10000 p:0.01}
+$ aql explore.aql
+count: 8
+mean:  5.0
+min:   2.0
+max:   9.0
 ```
 
-The filter computed two values for you: `m`, the number of bits it will
-use (95 851), and `k`, the number of hash functions (7). You never set
-those directly — they fall out of `n` and `p`. (Curious how? See
-[Explanation → Sizing](explanation.md#sizing-the-filter).)
+Note the `end` after each call. AQL words look ahead for arguments, and
+`end` marks where the call stops; forget it and the next token gets
+swallowed as an argument. (Inputs may be Integer or Float; results come
+back as Float, except `count`, which is an Integer.)
 
 ---
 
-## Step 2 — add some items
+## Step 2 — centre and spread
 
-Add three usernames. Each `add` call mutates the filter in place; we
-bind the returned filter to throwaway names (`_1`, `_2`, `_3`) just to
-keep the stack clean. Append below the `params:` line:
-
-```aql
-def _1 (seen Bloom.add "ada" end)
-def _2 (seen Bloom.add "grace" end)
-def _3 (seen Bloom.add "alan" end)
-```
-
-Nothing prints yet — `add` just records the items. Note the `end` after
-each call: AQL words look ahead for arguments, and `end` marks where the
-call stops. Forget it and the next token gets swallowed as an argument.
-
----
-
-## Step 3 — ask what the filter has seen
-
-Now query it. `Bloom.contains` returns a Boolean:
+A mean alone doesn't tell you how spread out the data is. Add the
+median (the middle value) and the standard deviation (typical distance
+from the mean). Append below:
 
 ```aql
-print (`ada seen?    ${(seen Bloom.contains "ada" end)}`) end
-print (`grace seen?  ${(seen Bloom.contains "grace" end)}`) end
-print (`linus seen?  ${(seen Bloom.contains "linus" end)}`) end
+print (`median: ${(data Stats.median end)}`) end
+print (`stddev: ${(data Stats.stddev end)}`) end
+print (`iqr:    ${(data Stats.iqr end)}`) end
 ```
 
 Run the whole file:
 
 ```console
-$ aql seen.aql
-params:      {k:7 m:95851 n:10000 p:0.01}
-ada seen?    true
-grace seen?  true
-linus seen?  false
+$ aql explore.aql
+count: 8
+mean:  5.0
+min:   2.0
+max:   9.0
+median: 4.5
+stddev: 2.138089935299395
+iqr:    1.5
 ```
 
-`ada` and `grace` were added, so they read `true`. `linus` was not, and
-reads `false`. That `false` is a *guarantee*: a bloom filter never
-forgets something you added, so a "no" is always correct.
+`stddev` here is the **sample** standard deviation (it divides by
+`n - 1`); if your data *is* the whole population, use `Stats.pstddev`
+instead. The difference and when it matters is in
+[Explanation → Sample vs population](explanation.md#sample-vs-population).
+`median` and `iqr` are order statistics — they need the raw values
+sorted, so they only accept a List (more on that in a moment).
 
 ---
 
-## Step 4 — estimate how many items you've added
+## Step 3 — build a running Summary
 
-The filter can estimate its own cardinality without storing the items.
-Add:
+So far we handed a whole List to each word, which walks it afresh every
+time. When data arrives a piece at a time, or you want one object you
+can update and merge, build a `Summary` — a streaming accumulator that
+holds running moments and answers any descriptive query in one pass.
+
+Add this to the file:
 
 ```aql
-print (`distinct ~   ${(seen Bloom.count end)}`) end
+def s ([2 4 4 4] Stats.summary end)
+def _1 (s Stats.push-all [5 5 7 9] end)
+print (`mean: ${(s Stats.mean end)} n: ${(s Stats.count end)}`) end
 ```
 
 ```console
-$ aql seen.aql
+$ aql explore.aql
 ...
-distinct ~   3
+mean: 5.0 n: 8
 ```
 
-We added three distinct items and the estimate is `3`. `count` is an
-*approximation* (it reads the bit pattern, not a stored list), so on a
-fuller filter expect it to drift a little — see
-[Explanation → Estimating cardinality](explanation.md#estimating-cardinality).
+We seeded the Summary with four values, then pushed four more. A
+`Summary` is mutated **in place**: `push`/`push-all` update `s` and
+return the *same* object, which is why we bind the result to a throwaway
+`_1`. The descriptive words (`mean`, `variance`, `stddev`, …) accept a
+Summary just as happily as a List.
 
 ---
 
-## Step 5 — watch false positives, and see that they track `p`
+## Step 4 — merge two Summaries
 
-This is the defining behaviour of a bloom filter, and it is worth seeing
-once. A false positive is an item you never added that nonetheless reads
-`true`, because other items happened to set all of its bits. The whole
-point of `p` is that you get to choose how often this happens.
-
-Let's measure it. Create a second file `falsepos.aql` that sizes a
-filter for 50 items at a 10 % rate, fills it with exactly those 50
-items, then queries 1 000 keys that were never added:
+Because a Summary stores moments rather than the raw data, two of them
+combine in constant time — no re-reading the inputs. Build two and merge:
 
 ```aql
-import "./bloom.aql"
-
-def bf ({n: 50, p: 0.1} Bloom.make end)
-print (`params: ${(bf Bloom.params end)}`) end
-
-# add exactly the 50 items it was sized for
-def _ (iota 50 each [ var [[i] bf Bloom.add `item-${i}` end 0 ] ])
-
-# query 1000 keys that were never added
-def hits (iota 1000 each [
-  var [[i]
-    def key `absent-${i}`
-    if (bf Bloom.contains key end) [1] [0]
-  ]
-])
-print (`false positives among 1000 un-added keys: ${(0 hits [add end] fold)}`) end
+def a ([2 4 4 4] Stats.summary end)
+def b ([5 5 7 9] Stats.summary end)
+def _m (a Stats.merge b end)
+print (`merged mean: ${(a Stats.mean end)} merged stddev: ${(a Stats.stddev end)}`) end
 ```
 
 ```console
-$ aql falsepos.aql
-params: {k:3 m:240 n:50 p:0.1}
-false positives among 1000 un-added keys: 97
+$ aql explore.aql
+...
+merged mean: 5.0 merged stddev: 2.138089935299395
 ```
 
-Of the 1 000 keys we never added, 903 correctly read `false` and only
-97 — about 10 % — were false positives, right at the 10 % we asked
-for. Loaded to the capacity it was built for, the filter delivers the
-error rate you specified. Size it for fewer items (smaller `n`) or
-overfill it and that rate climbs; the math behind the trade-off is in
-[Explanation → Sizing](explanation.md#sizing-the-filter).
+Same mean and standard deviation as the single List in Step 2 — the
+merge is exact, not an approximation. `merge` folds `b` into `a` and
+returns `a` (so `a` is mutated; `b` is untouched). This is the basis for
+distributed aggregation: workers each build a Summary, and a coordinator
+merges them. Why this works in O(1) and stays numerically stable is in
+[Explanation → Why a streaming Summary](explanation.md#why-a-streaming-summary).
+
+---
+
+## Step 5 — a tiny dataset and a correlation
+
+Real questions are usually about how *two* variables move together.
+Stats has bivariate words over a pair of Lists, and dataset words over a
+whole matrix. Create a second file `relate.aql`:
+
+```aql
+import "aql:matrix-util"
+import "./stats.aql"
+
+def xs [1 2 3 4 5]
+def ys [2 4 5 4 5]
+print (`correlation: ${(xs Stats.correlation ys end)}`) end
+print (`linreg:      ${(xs Stats.linreg ys end)}`) end
+
+def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
+print (`col-means: ${(mat Stats.col-means end)}`) end
+```
+
+```console
+$ aql relate.aql
+correlation: 0.7745966692414833
+linreg:      {intercept:2.2 r:0.7745966692414834 r2:0.6000000000000001 slope:0.6}
+col-means: [4.0 7.5]
+```
+
+`correlation` is Pearson's *r* (between -1 and 1); `linreg` fits a
+straight line and reports its `slope`, `intercept`, and goodness-of-fit
+(`r`, `r2`). The dataset words like `col-means` take a `MatrixUtil`
+Matrix whose **rows are observations** and **columns are variables** —
+so you must `import "aql:matrix-util"` yourself in scripts that build a
+Matrix (the library does not re-export it).
 
 ---
 
 ## What you've learned
 
-- `Bloom.make` sizes a filter from a target `n` and `p`.
-- `Bloom.add` records items; `Bloom.contains` queries them.
-- A `false` from `contains` is always correct; a `true` is "probably,"
-  with a tunable false-positive rate.
-- `Bloom.count` estimates how many distinct items you added.
-- Under-sizing a filter produces false positives — by design.
+- Descriptive words (`mean`, `median`, `stddev`, …) take the data first:
+  `data Stats.mean end`.
+- The unqualified `variance`/`stddev` are **sample** statistics;
+  `pvariance`/`pstddev` are **population**.
+- A `Summary` is a streaming, mergeable accumulator built with
+  `Stats.summary`; `push`/`merge` mutate it in place.
+- Order statistics (`median`, `quantile`, `iqr`, `mode`) need a List.
+- Bivariate (`correlation`, `linreg`) and dataset (`col-means`, …) words
+  let you relate variables.
 
 ## Where to go next
 
-- Solve specific problems with the [How-to guides](how-to.md) — sizing,
-  merging, persistence, running the tests.
+- Solve specific problems with the [How-to guides](how-to.md) — sample
+  vs population, streaming, persistence, regression, running the tests.
 - Look up exact signatures in the [Reference](reference.md).
 - Understand the machinery in the [Explanation](explanation.md).
