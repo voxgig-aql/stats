@@ -7,9 +7,8 @@
 #   Test.check-prop NAME  [GEN-BODY]  [PROP-BODY]  RUNS  SEED  MAX-SHRINKS
 #
 # The sibling `test/stats_prop_spec.aql` covers the SAME idea through the
-# declarative `PropertySpec` surface. Because this form takes RUNS
-# explicitly, it carries the heavier properties (merge, encode/decode,
-# correlation) at a smaller run budget.
+# declarative `PropertySpec` surface. Stats words are called verb-first
+# (`Stats.verb data args… end`).
 #
 # GEN-BODY runs with `r` bound to the random source and must leave one
 # value on the stack. PROP-BODY takes that value and returns a Boolean.
@@ -26,8 +25,8 @@ import "./stats.aql" end
 
 # |a - b| < 1e-6.
 def close fn [
-  [b:Float a:Float] [Boolean] [
-    ((a sub b) MathUtil.abs) lt 0.000001
+  [a:Float b:Float] [Boolean] [
+    (MathUtil.abs (a sub b)) lt 0.000001
   ]
 ]
 
@@ -40,8 +39,8 @@ def close fn [
 Test.check-prop "sample-var-ge-pop-var"
   [ r.list-of [r.int 0 100] 8 ]
   [ var [[xs]
-      def sv (xs Stats.variance end)
-      def pv (xs Stats.pvariance end)
+      def sv (Stats.variance xs end)
+      def pv (Stats.pvariance xs end)
       (pv gte 0.0) and (sv gte pv)
   ]]
   40 1 0
@@ -57,15 +56,15 @@ Test.check-prop "merge-pools-correctly"
   [ r.list-of [r.int 0 100] 6 ]
   [ var [[xs]
       def ys [10 20 30 40]
-      def a (xs Stats.summary end)
-      def b (ys Stats.summary end)
-      def na (a Stats.count end)
-      def merged (a Stats.merge b end)
+      def a (Stats.summary xs end)
+      def b (Stats.summary ys end)
+      def na (Stats.count a end)
+      def merged (Stats.merge a b end)
       # Pool independently by pushing both lists into one summary.
-      def pooled (xs Stats.summary end)
-      def _p (pooled Stats.push-all ys end)
-      ((merged Stats.count end) eq (na add 4))
-        and ((merged Stats.mean end) close (pooled Stats.mean end))
+      def pooled (Stats.summary xs end)
+      def _p (Stats.push-all pooled ys end)
+      ((Stats.count merged end) eq (na add 4))
+        and ((Stats.mean merged end) close (Stats.mean pooled end))
   ]]
   30 1 0
 end
@@ -79,9 +78,9 @@ end
 Test.check-prop "self-correlation-is-one"
   [ r.list-of [r.int 0 100] 8 ]
   [ var [[xs]
-      def v (xs Stats.variance end)
+      def v (Stats.variance xs end)
       if (v gt 0.0) [
-        (xs Stats.correlation xs end) close 1.0
+        (Stats.correlation xs xs end) close 1.0
       ] [true]
   ]]
   40 1 0
@@ -93,9 +92,9 @@ end
 Test.check-prop "zscores-mean-zero"
   [ r.list-of [r.int 0 100] 8 ]
   [ var [[xs]
-      def v (xs Stats.variance end)
+      def v (Stats.variance xs end)
       if (v gt 0.0) [
-        ((xs Stats.zscores end) Stats.mean end) close 0.0
+        (Stats.mean (Stats.zscores xs end) end) close 0.0
       ] [true]
   ]]
   40 1 0
@@ -107,10 +106,10 @@ end
 Test.check-prop "encode-decode-round-trips"
   [ r.list-of [r.int 0 100] 8 ]
   [ var [[xs]
-      def s (xs Stats.summary end)
-      def back ((s Stats.encode end) Stats.decode end)
-      ((s Stats.count end) eq (back Stats.count end))
-        and ((s Stats.mean end) close (back Stats.mean end))
+      def s (Stats.summary xs end)
+      def back (Stats.decode (Stats.encode s end) end)
+      ((Stats.count s end) eq (Stats.count back end))
+        and ((Stats.mean s end) close (Stats.mean back end))
   ]]
   30 1 0
 end

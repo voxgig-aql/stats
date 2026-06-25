@@ -8,9 +8,8 @@
 # — which `Test.run-property` runs (at the default 100 iterations).
 #
 # The sibling `test/stats_prop_test.aql` covers the SAME idea through the
-# imperative `Test.check-prop` driver. The naturally cheap O(n)
-# invariants live here at the full 100-run budget; the heavier
-# properties (merge, encode, correlation) live in the direct-code file.
+# imperative `Test.check-prop` driver. Stats words are called verb-first
+# (`Stats.verb data args… end`).
 #
 # GEN-BODY runs with `r` (a seeded aql:rand instance) in scope and must
 # leave one value on the stack. PROPERTY-BODY takes that value and must
@@ -48,44 +47,44 @@ def specs [
   (Test.prop "mean-within-range"
     [ r.list-of [r.int 0 100] 8 ]
     [ var [[xs]
-        def mu (xs Stats.mean end)
-        ((xs Stats.min end) lte mu) and (mu lte (xs Stats.max end))
+        def mu (Stats.mean xs end)
+        ((Stats.min xs end) lte mu) and (mu lte (Stats.max xs end))
     ]])
 
   # 2. Population variance is non-negative.
   (Test.prop "pvariance-non-negative"
     [ r.list-of [r.int 0 100] 8 ]
-    [ var [[xs] (xs Stats.pvariance end) gte 0.0 ]])
+    [ var [[xs] (Stats.pvariance xs end) gte 0.0 ]])
 
   # 3. The median lies within [min, max].
   (Test.prop "median-within-range"
     [ r.list-of [r.int 0 100] 8 ]
     [ var [[xs]
-        def md (xs Stats.median end)
-        ((xs Stats.min end) lte md) and (md lte (xs Stats.max end))
+        def md (Stats.median xs end)
+        ((Stats.min xs end) lte md) and (md lte (Stats.max xs end))
     ]])
 
   # 4. range == max - min, and is non-negative.
   (Test.prop "range-is-max-minus-min"
     [ r.list-of [r.int 0 100] 8 ]
     [ var [[xs]
-        def rg (xs Stats.range end)
-        (rg gte 0.0) and (rg eq ((xs Stats.max end) sub (xs Stats.min end)))
+        def rg (Stats.range xs end)
+        (rg gte 0.0) and (rg eq ((Stats.max xs end) sub (Stats.min xs end)))
     ]])
 
   # 5. The mode is a member of the data.
   (Test.prop "mode-is-a-member"
     [ r.list-of [r.int 0 100] 8 ]
     [ var [[xs]
-        def md (xs Stats.mode end)
-        def fs (xs each [var [[x] (x convert Float)]])
+        def md (Stats.mode xs end)
+        def fs (xs each [var [[x] (convert Float x)]])
         (ArrayUtil.member [md] fs) get 0
     ]])
 
   # 6. count equals the input length.
   (Test.prop "count-equals-length"
     [ r.list-of [r.int 0 100] 8 ]
-    [ var [[xs] (xs Stats.count end) eq (xs size) ]])
+    [ var [[xs] (Stats.count xs end) eq (xs size) ]])
 
 ]
 

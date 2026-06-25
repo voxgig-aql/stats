@@ -19,9 +19,9 @@ correlation matrices, standardisation, and ordinary least squares).
 
 There are two ways in, and the design leans on both:
 
-- **Pure functions over a List** — `[1 2 3] Stats.mean end`. Convenient
+- **Pure functions over a List** — `Stats.mean [1 2 3] end`. Convenient
   for data you already hold in memory; each call walks the List.
-- **A streaming `Summary` accumulator** — `xs Stats.summary end`, then
+- **A streaming `Summary` accumulator** — `Stats.summary xs end`, then
   `push`/`push-all`/`merge`. For data that arrives incrementally, that
   is too large to keep, or that you want to aggregate in parallel.
 
@@ -175,7 +175,7 @@ Every descriptive word accepts **either** a List **or** a Summary. This
 is not two code paths bolted together: internally each word coerces its
 argument to a Summary (a List is folded into a fresh one; a Summary is
 used as-is) and then reads the answer off the moments. So
-`[1 2 3] Stats.mean end` and `([1 2 3] Stats.summary end) Stats.mean end`
+`Stats.mean [1 2 3] end` and `Stats.mean (Stats.summary [1 2 3] end) end`
 run the *same* computation — the List form just builds a throwaway
 Summary first.
 

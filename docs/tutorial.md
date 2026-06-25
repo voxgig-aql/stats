@@ -29,15 +29,16 @@ import "./stats.aql"
 # pairs print out of order, because print collects a forward argument.)
 
 def data [2 4 4 4 5 5 7 9]
-print (`count: ${(data Stats.count end)}`) end
-print (`mean:  ${(data Stats.mean end)}`) end
-print (`min:   ${(data Stats.min end)}`) end
-print (`max:   ${(data Stats.max end)}`) end
+print (`count: ${(Stats.count data end)}`) end
+print (`mean:  ${(Stats.mean data end)}`) end
+print (`min:   ${(Stats.min data end)}`) end
+print (`max:   ${(Stats.max data end)}`) end
 ```
 
-Every descriptive word takes the data **first**, then the verb, then
-ends with `end`: `data Stats.mean end`. That is the whole calling
-convention — receiver first, no `f(x)` and no `x.f()`. Run it:
+Every descriptive word is written **verb first**, then the data, then
+any extra arguments, ending with `end`: `Stats.mean data end`. That is
+the whole calling convention — the verb comes first, no `f(x)` and no
+`x.f()`. Run it:
 
 ```console
 $ aql explore.aql
@@ -61,9 +62,9 @@ median (the middle value) and the standard deviation (typical distance
 from the mean). Append below:
 
 ```aql
-print (`median: ${(data Stats.median end)}`) end
-print (`stddev: ${(data Stats.stddev end)}`) end
-print (`iqr:    ${(data Stats.iqr end)}`) end
+print (`median: ${(Stats.median data end)}`) end
+print (`stddev: ${(Stats.stddev data end)}`) end
+print (`iqr:    ${(Stats.iqr data end)}`) end
 ```
 
 Run the whole file:
@@ -98,9 +99,9 @@ holds running moments and answers any descriptive query in one pass.
 Add this to the file:
 
 ```aql
-def s ([2 4 4 4] Stats.summary end)
-def _1 (s Stats.push-all [5 5 7 9] end)
-print (`mean: ${(s Stats.mean end)} n: ${(s Stats.count end)}`) end
+def s (Stats.summary [2 4 4 4] end)
+def _1 (Stats.push-all s [5 5 7 9] end)
+print (`mean: ${(Stats.mean s end)} n: ${(Stats.count s end)}`) end
 ```
 
 ```console
@@ -123,10 +124,10 @@ Because a Summary stores moments rather than the raw data, two of them
 combine in constant time — no re-reading the inputs. Build two and merge:
 
 ```aql
-def a ([2 4 4 4] Stats.summary end)
-def b ([5 5 7 9] Stats.summary end)
-def _m (a Stats.merge b end)
-print (`merged mean: ${(a Stats.mean end)} merged stddev: ${(a Stats.stddev end)}`) end
+def a (Stats.summary [2 4 4 4] end)
+def b (Stats.summary [5 5 7 9] end)
+def _m (Stats.merge a b end)
+print (`merged mean: ${(Stats.mean a end)} merged stddev: ${(Stats.stddev a end)}`) end
 ```
 
 ```console
@@ -156,11 +157,11 @@ import "./stats.aql"
 
 def xs [1 2 3 4 5]
 def ys [2 4 5 4 5]
-print (`correlation: ${(xs Stats.correlation ys end)}`) end
-print (`linreg:      ${(xs Stats.linreg ys end)}`) end
+print (`correlation: ${(Stats.correlation xs ys end)}`) end
+print (`linreg:      ${(Stats.linreg xs ys end)}`) end
 
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
-print (`col-means: ${(mat Stats.col-means end)}`) end
+print (`col-means: ${(Stats.col-means mat end)}`) end
 ```
 
 ```console
@@ -181,8 +182,8 @@ Matrix (the library does not re-export it).
 
 ## What you've learned
 
-- Descriptive words (`mean`, `median`, `stddev`, …) take the data first:
-  `data Stats.mean end`.
+- Descriptive words (`mean`, `median`, `stddev`, …) are written verb
+  first, then the data: `Stats.mean data end`.
 - The unqualified `variance`/`stddev` are **sample** statistics;
   `pvariance`/`pstddev` are **population**.
 - A `Summary` is a streaming, mergeable accumulator built with

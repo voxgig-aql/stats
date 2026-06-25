@@ -117,12 +117,12 @@ directions: give the coercion helper a **union** param and narrow on the
 ```aql
 def as-summary fn [
   [x:(List tor Summary)] [Summary] [
-    if (x is List) [x build-summary] [x]   # `is List` (not `is Summary`) narrows cleanly
+    if (x is List) [build-summary x] [x]   # `is List` (not `is Summary`) narrows cleanly
   ]
 ]
 ```
 
-`if (x is Summary) [x] [x build-summary]` (negative-branch narrowing)
+`if (x is Summary) [x] [build-summary x]` (negative-branch narrowing)
 still errored; flipping to the positive `is List` test fixed it. This is
 the same class of `aql check` false-positive the bloom report noted
 (export-by-reference hides use sites); checked *through* a suite the
@@ -130,7 +130,7 @@ words type-check, which is what the gating `divergence` job asserts.
 
 ## 7. 🟢 the empty-list literal `[]` poisons downstream query types
 
-At top level, `def acc ([] Stats.summary end)` then `acc Stats.mean end`
+At top level, `def acc (Stats.summary [] end)` then `Stats.mean acc end`
 draws the §6 `no_signature` error, while `[1 2 3] Stats.summary` then
 `mean` does not — the empty literal `[]` is typed loosely enough that the
 checker can't carry it through the union param. It is invisible inside a

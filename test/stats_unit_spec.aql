@@ -8,15 +8,15 @@
 # A TestSpec is `{name, subject, cases, subs}`:
 #   - `subject` is the exported word to exercise, named as a dotted
 #     String (e.g. "Stats.mean").
-#   - each case is `{name, in, out}`: the `in` list is spread onto the
-#     stack (receiver first, then forward args), the subject is
-#     dispatched, and the top-of-stack result is deep-compared (`deq`)
-#     against `out`.
+#   - each case is `{name, in, out}`. `Test.run-spec` spreads `in` onto
+#     the stack with `in[0]` as the dispatch subject (the receiver), then
+#     deep-compares the result against `out`. So for a multi-argument
+#     word the `in` list reads receiver-first — e.g. for `Stats.quantile`
+#     (called `Stats.quantile xs q`) the case is `in: [q xs]`.
 #
 # Only exact-valued statistics live here (means over evenly-divisible
 # data, population variance, the order statistics, exact covariance);
-# the irrational results (stddev, correlation, the normal distribution)
-# are tolerance-checked in the imperative sibling instead.
+# the irrational results are tolerance-checked in the imperative sibling.
 #
 # Run:
 #   aql test/stats_unit_spec.aql
@@ -85,12 +85,13 @@ def specs [
     subs: []
   }
 
+  # `Stats.quantile xs q` — receiver-first `in`, so the case is [q xs].
   {
     name:    "quantile"
     subject: "Stats.quantile"
     cases: [
-      { name: "q25" in: [ [2 4 4 4 5 5 7 9] 0.25 ] out: 4.0 }
-      { name: "q75" in: [ [2 4 4 4 5 5 7 9] 0.75 ] out: 5.5 }
+      { name: "q25" in: [ 0.25 [2 4 4 4 5 5 7 9] ] out: 4.0 }
+      { name: "q75" in: [ 0.75 [2 4 4 4 5 5 7 9] ] out: 5.5 }
     ]
     subs: []
   }
@@ -109,7 +110,7 @@ def specs [
     subs: []
   }
 
-  # exact bivariate covariance.
+  # exact bivariate covariance (symmetric, so argument order is moot).
   {
     name:    "covariance"
     subject: "Stats.covariance"

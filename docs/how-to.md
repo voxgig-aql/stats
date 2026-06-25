@@ -63,15 +63,15 @@ automatically.
 
 ## Summarise a List of numbers
 
-Every descriptive word takes the data first, then the verb, then `end`.
+Every descriptive word is written verb first, then the data, then `end`.
 Inputs may be Integer or Float; results are Float (`count` is Integer):
 
 ```aql
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
-print ((xs Stats.mean end)) end     # => 5.0
-print ((xs Stats.stddev end)) end   # => 2.138089935299395
-print ((xs Stats.range end)) end    # => 7.0
+print ((Stats.mean xs end)) end     # => 5.0
+print ((Stats.stddev xs end)) end   # => 2.138089935299395
+print ((Stats.range xs end)) end    # => 7.0
 ```
 
 The full descriptive set is `count`, `sum`, `mean`, `variance`,
@@ -92,10 +92,10 @@ use the population form when your data *is* the entire population.
 ```aql
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
-print (`sample var:     ${(xs Stats.variance end)}`) end   # => 4.571428571428571
-print (`population var: ${(xs Stats.pvariance end)}`) end  # => 3.9999999999999996
-print (`sample sd:      ${(xs Stats.stddev end)}`) end     # => 2.138089935299395
-print (`population sd:  ${(xs Stats.pstddev end)}`) end    # => 1.9999999999999998
+print (`sample var:     ${(Stats.variance xs end)}`) end   # => 4.571428571428571
+print (`population var: ${(Stats.pvariance xs end)}`) end  # => 3.9999999999999996
+print (`sample sd:      ${(Stats.stddev xs end)}`) end     # => 2.138089935299395
+print (`population sd:  ${(Stats.pstddev xs end)}`) end    # => 1.9999999999999998
 ```
 
 The same split applies to `covariance` (sample) vs `pcovariance`
@@ -112,10 +112,10 @@ List** — they cannot run off a Summary (that raises `needs_data`):
 ```aql
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
-print (`median:   ${(xs Stats.median end)}`) end          # => 4.5
-print (`q90:      ${(xs Stats.quantile 0.9 end)}`) end     # => 7.6
-print (`iqr:      ${(xs Stats.iqr end)}`) end              # => 1.5
-print (`mode:     ${(xs Stats.mode end)}`) end             # => 4.0
+print (`median:   ${(Stats.median xs end)}`) end          # => 4.5
+print (`q90:      ${(Stats.quantile xs 0.9 end)}`) end     # => 7.6
+print (`iqr:      ${(Stats.iqr xs end)}`) end              # => 1.5
+print (`mode:     ${(Stats.mode xs end)}`) end             # => 4.0
 ```
 
 `quantile` takes `q` in `[0, 1]` and interpolates linearly
@@ -133,20 +133,20 @@ place** and returned, so bind the result to a throwaway name:
 
 ```aql
 import "./stats.aql"
-def s ([] Stats.summary end)          # [] gives an empty Summary
-def _1 (s Stats.push 10 end)          # one value
-def _2 (s Stats.push-all [20 30 40] end)  # many at once
-print (`mean: ${(s Stats.mean end)} n: ${(s Stats.count end)}`) end
+def s (Stats.summary [] end)          # [] gives an empty Summary
+def _1 (Stats.push s 10 end)          # one value
+def _2 (Stats.push-all s [20 30 40] end)  # many at once
+print (`mean: ${(Stats.mean s end)} n: ${(Stats.count s end)}`) end
 # => mean: 25.0 n: 4
 ```
 
 Two Summaries combine in O(1) — and exactly, not approximately:
 
 ```aql
-def a ([1 2 3 4] Stats.summary end)
-def b ([5 6 7 8] Stats.summary end)
-def _m (a Stats.merge b end)
-print (`merged mean: ${(a Stats.mean end)}`) end   # => 4.5
+def a (Stats.summary [1 2 3 4] end)
+def b (Stats.summary [5 6 7 8] end)
+def _m (Stats.merge a b end)
+print (`merged mean: ${(Stats.mean a end)}`) end   # => 4.5
 ```
 
 `merge` folds `b` into `a` and returns `a`; `b` is left untouched. All
@@ -163,12 +163,12 @@ bivariate words do not (they need the raw data). Background:
 
 ```aql
 import "./stats.aql"
-def s ([1 2 3 4 5] Stats.summary end)
-def snap (s Stats.encode end)
+def s (Stats.summary [1 2 3 4 5] end)
+def snap (Stats.encode s end)
 print (snap) end
 # => {m2:10.0 m3:0.0 m4:34.0 max:5.0 mean:3.0 min:1.0 n:5}
-def back (snap Stats.decode end)
-print ((back Stats.mean end)) end   # => 3.0
+def back (Stats.decode snap end)
+print ((Stats.mean back end)) end   # => 3.0
 ```
 
 The snapshot carries the count, mean, central-moment sums (`m2`, `m3`,
@@ -187,9 +187,9 @@ Bivariate words take two equal-length Lists:
 import "./stats.aql"
 def xs [1 2 3 4 5]
 def ys [2 4 5 4 5]
-print (`covariance:  ${(xs Stats.covariance ys end)}`) end    # => 1.5
-print (`correlation: ${(xs Stats.correlation ys end)}`) end   # => 0.7745966692414833
-def fit (xs Stats.linreg ys end)
+print (`covariance:  ${(Stats.covariance xs ys end)}`) end    # => 1.5
+print (`correlation: ${(Stats.correlation xs ys end)}`) end   # => 0.7745966692414833
+def fit (Stats.linreg xs ys end)
 print (`slope:     ${(fit get slope)}`) end       # => 0.6
 print (`intercept: ${(fit get intercept)}`) end    # => 2.2
 print (`r2:        ${(fit get r2)}`) end            # => 0.6000000000000001
@@ -212,14 +212,14 @@ re-export the `MatrixUtil` binding:
 import "aql:matrix-util"
 import "./stats.aql"
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
-print (`col-means:    ${(mat Stats.col-means end)}`) end
+print (`col-means:    ${(Stats.col-means mat end)}`) end
 # => [4.0 7.5]
-print (`col-stddevs:  ${(mat Stats.col-stddevs end)}`) end
+print (`col-stddevs:  ${(Stats.col-stddevs mat end)}`) end
 # => [2.581988897471611 4.43471156521669]
-def cov (mat Stats.cov-matrix end)
+def cov (Stats.cov-matrix mat end)
 print (`cov row 0:    ${(cov MatrixUtil.row 0)}`) end
 # => [6.666666666666666 11.333333333333332]
-def cor (mat Stats.cor-matrix end)
+def cor (Stats.cor-matrix mat end)
 print (`cor row 0:    ${(cor MatrixUtil.row 0)}`) end
 # => [1.0 0.9897782665572892]
 ```
@@ -246,7 +246,7 @@ import "./stats.aql"
 # columns: [intercept x1 x2]; y was generated from  y = 1 + 2*x1 + 0.5*x2
 def x (MatrixUtil.create [[1 1 2] [1 2 1] [1 3 4] [1 4 3] [1 5 6]])
 def y [4.0 5.5 9.0 10.5 14.0]
-print (`coeffs: ${(x Stats.ols y end)}`) end
+print (`coeffs: ${(Stats.ols x y end)}`) end
 # => [1.0 2.0 0.5000000000000001]   (intercept, x1, x2)
 ```
 
@@ -266,18 +266,18 @@ inside the handler the Error value is on the stack, so read `get code` /
 
 ```aql
 import "./stats.aql"
-def msg (do [[5] Stats.variance end] error [get message])
+def msg (do [Stats.variance [5] end] error [get message])
 print (msg) end
 # => Stats: need at least 2 value(s) (have 1)
-def code (do [[5] Stats.variance end] error [get code])
+def code (do [Stats.variance [5] end] error [get code])
 print (code) end                 # => bad_input
 
 # an order statistic on a Summary needs the raw data:
-def s ([1 2 3] Stats.summary end)
-print ((do [s Stats.median end] error [get code])) end   # => needs_data
+def s (Stats.summary [1 2 3] end)
+print ((do [Stats.median s end] error [get code])) end   # => needs_data
 
 # unparseable decode payload:
-print ((do ["not a snapshot" Stats.decode end] error [get code])) end
+print ((do [Stats.decode "not a snapshot" end] error [get code])) end
 # => bad_payload
 ```
 
@@ -295,8 +295,8 @@ In a test, assert the failure (or its exact code) with `aql:test`:
 ```aql
 import "aql:test"
 import "./stats.aql"
-[[5] Stats.variance end] Assert.throws end
-def e (do [[5] Stats.variance end])
+[Stats.variance [5] end] Assert.throws end
+def e (do [Stats.variance [5] end])
 bad_input/q (e get code) Assert.equal end
 ```
 

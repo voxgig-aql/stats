@@ -6,52 +6,50 @@
 # data and so take a List only.
 #
 #   --- accumulator (a streaming, mergeable Summary) ---
-#   xs Stats.summary            → Summary   (build from a List; [] ⇒ empty)
-#   s  Stats.push x             → Summary   (mutated in place)
-#   s  Stats.push-all xs        → Summary   (mutated in place)
-#   a  Stats.merge b            → Summary   (union of moments, into a)
-#   s  Stats.encode             → String    (jsonic snapshot)
-#   text Stats.decode           → Summary   (rebuilt snapshot)
+#   Stats.summary xs            → Summary   (build from a List; [] ⇒ empty)
+#   Stats.push s x              → Summary   (mutated in place)
+#   Stats.push-all s xs         → Summary   (mutated in place)
+#   Stats.merge a b             → Summary   (b's moments folded into a)
+#   Stats.encode s              → String    (jsonic snapshot)
+#   Stats.decode text           → Summary   (rebuilt snapshot)
 #
 #   --- descriptive (List | Summary) ---
-#   x Stats.count               → Integer
-#   x Stats.sum                 → Float
-#   x Stats.mean                → Float
-#   x Stats.variance            → Float   (sample, n-1)
-#   x Stats.pvariance           → Float   (population, n)
-#   x Stats.stddev              → Float   (sample)
-#   x Stats.pstddev             → Float   (population)
-#   x Stats.min                 → Float
-#   x Stats.max                 → Float
-#   x Stats.range               → Float   (max - min)
-#   x Stats.skewness            → Float   (biased g1)
-#   x Stats.kurtosis            → Float   (biased excess, g2)
+#   Stats.count x               → Integer
+#   Stats.sum x                 → Float
+#   Stats.mean x                → Float
+#   Stats.variance x            → Float   (sample, n-1)
+#   Stats.pvariance x           → Float   (population, n)
+#   Stats.stddev x              → Float   (sample)
+#   Stats.pstddev x             → Float   (population)
+#   Stats.min x / max x / range x → Float
+#   Stats.skewness x            → Float   (biased g1)
+#   Stats.kurtosis x            → Float   (biased excess, g2)
 #
 #   --- order statistics (List only) ---
-#   xs Stats.median             → Float
-#   xs Stats.quantile q         → Float   (q in [0,1], linear interpolation)
-#   xs Stats.iqr                → Float   (Q3 - Q1)
-#   xs Stats.mode               → Float   (most frequent; first on ties)
+#   Stats.median xs             → Float
+#   Stats.quantile xs q         → Float   (q in [0,1], linear interpolation)
+#   Stats.iqr xs                → Float   (Q3 - Q1)
+#   Stats.mode xs               → Float   (most frequent; first on ties)
 #
 #   --- bivariate (two Lists) ---
-#   xs Stats.covariance ys      → Float   (sample)
-#   xs Stats.pcovariance ys     → Float   (population)
-#   xs Stats.correlation ys     → Float   (Pearson r)
-#   xs Stats.linreg ys          → Map     ({slope, intercept, r, r2})
+#   Stats.covariance xs ys      → Float   (sample)
+#   Stats.pcovariance xs ys     → Float   (population)
+#   Stats.correlation xs ys     → Float   (Pearson r)
+#   Stats.linreg xs ys          → Map     ({slope, intercept, r, r2})
 #
 #   --- distributions / scores ---
-#   xs Stats.zscores            → List    (sample-standardised)
-#   x  Stats.normal-pdf {mu,sigma} → Float
-#   x  Stats.normal-cdf {mu,sigma} → Float
+#   Stats.zscores xs            → List    (sample-standardised)
+#   Stats.normal-pdf x {mu,sigma} → Float
+#   Stats.normal-cdf x {mu,sigma} → Float
 #
 #   --- matrix / dataset (rows = observations, cols = variables) ---
-#   mat Stats.col-means         → List
-#   mat Stats.col-variances     → List   (sample)
-#   mat Stats.col-stddevs       → List   (sample)
-#   mat Stats.cov-matrix        → Matrix (sample covariance)
-#   mat Stats.cor-matrix        → Matrix (correlation)
-#   mat Stats.standardize       → Matrix (z-scored columns)
-#   x   Stats.ols ys            → List   (least-squares coefficients)
+#   Stats.col-means mat         → List
+#   Stats.col-variances mat     → List   (sample)
+#   Stats.col-stddevs mat       → List   (sample)
+#   Stats.cov-matrix mat        → Matrix (sample covariance)
+#   Stats.cor-matrix mat        → Matrix (correlation)
+#   Stats.standardize mat       → Matrix (z-scored columns)
+#   Stats.ols x ys              → List   (least-squares coefficients)
 #
 # Failures raise coded errors (catch with `do […] error […]`, read
 # `e get code` / `e get message` in the handler):
@@ -69,10 +67,14 @@
 # overflow is a hard error, not a silent wrap, so sums of squares are
 # floated up front.
 #
-# Calling convention: the receiver/data comes first, then the verb, then
-# any extra arguments, and the call is terminated with `end` (or wrapped
-# in parens) — `xs Stats.mean end`. Without a terminator the verb
-# swallows the following token, giving a wrong result or a dispatch error.
+# Calling convention: calls are written verb-first (the all-forward
+# form) — the verb, then the data, then any extra arguments, terminated
+# with `end` (or wrapped in parens): `Stats.mean xs end`,
+# `Stats.covariance xs ys end`. Without a terminator the verb can swallow
+# whatever token follows it, so close every call with `end` or parens.
+# (The core array words `each`/`fold`, indexing `get`, and the matrix
+# accessors `MatrixUtil.row`/`col` read their subject from the stack and
+# stay subject-first — that is their native form.)
 #
 # Imported via `import "./stats.aql"`; the importing script need not
 # pre-import the `aql:*` utilities (math-util, array-util, matrix-util,
@@ -108,20 +110,20 @@ def Summary class {
 # Map any List of Numbers to a List of Floats (a no-op on Floats).
 def to-floats fn [
   [xs:List] [List] [
-    xs each [var [[x] (x convert Float)]]
+    xs each [var [[x] (convert Float x)]]
   ]
 ]
 
 def sum-floats fn [
   [xs:List] [Float] [
-    0.0 xs [var [[x acc] acc add (x convert Float)]] fold
+    0.0 xs [var [[x acc] acc add (convert Float x)]] fold
   ]
 ]
 
 # Ascending sort of a Float list via grade (sort indices) + at (gather).
 def sorted-floats fn [
   [xs:List] [List] [
-    def fs (xs to-floats)
+    def fs (to-floats xs)
     ArrayUtil.at (ArrayUtil.grade fs) fs
   ]
 ]
@@ -132,33 +134,34 @@ def sorted-floats fn [
 # Add one Float observation to a Summary, mutating it in place and
 # returning the same object. The higher-moment terms (m3, m4) use the
 # old m2/m3 and the old mean, so every update term is bound with `def`
-# from the pre-update fields before any `set` runs.
+# from the pre-update fields before any `set` runs. `set` is written in
+# its all-forward form: `set <field> <value> <container>`.
 
 def welford-push fn [
-  [v:Float s:Summary] [Summary] [
+  [s:Summary v:Float] [Summary] [
     def n0  s.n
     def n1  (n0 add 1)
-    def nf  (n1 convert Float)
+    def nf  (convert Float n1)
     def delta (v sub s.mean)
     def dn  (delta div nf)
     def dn2 (dn mul dn)
-    def t1  (delta mul dn mul (n0 convert Float))
+    def t1  (delta mul dn mul (convert Float n0))
     def mean1 (s.mean add dn)
     def m2b (s.m2 add t1)
     def m3b ((s.m3 add (t1 mul dn mul (nf sub 2.0))) sub (3.0 mul dn mul s.m2))
     def m4term (t1 mul dn2 mul (((nf mul nf) sub (3.0 mul nf)) add 3.0))
     def m4b (((s.m4 add m4term) add (6.0 mul dn2 mul s.m2)) sub (4.0 mul dn mul s.m3))
-    s set mean mean1 end
-    s set m2 m2b end
-    s set m3 m3b end
-    s set m4 m4b end
-    s set n n1 end
+    set mean (mean1) s end
+    set m2 (m2b) s end
+    set m3 (m3b) s end
+    set m4 (m4b) s end
+    set n (n1) s end
     if (n0 eq 0) [
-      s set min v end
-      s set max v end
+      set min (v) s end
+      set max (v) s end
     ] [
-      if (v lt s.min) [s set min v end] []
-      if (v gt s.max) [s set max v end] []
+      if (v lt s.min) [set min (v) s end] []
+      if (v gt s.max) [set max (v) s end] []
     ]
     s
   ]
@@ -168,7 +171,7 @@ def welford-push fn [
 def build-summary fn [
   [xs:List] [Summary] [
     def s (make Summary {n: 0, mean: 0.0, m2: 0.0, m3: 0.0, m4: 0.0, min: 0.0, max: 0.0})
-    s xs [var [[x acc] acc welford-push (x convert Float)]] fold
+    s xs [var [[x acc] welford-push acc (convert Float x)]] fold
   ]
 ]
 
@@ -178,7 +181,7 @@ def build-summary fn [
 # caller passes a List or an already-built Summary.
 def as-summary fn [
   [x:(List tor Summary)] [Summary] [
-    if (x is List) [x build-summary] [x]
+    if (x is List) [build-summary x] [x]
   ]
 ]
 
@@ -198,7 +201,7 @@ def require-list fn [
 ]
 
 def require-n fn [
-  [need:Integer s:Summary] [Summary] [
+  [s:Summary need:Integer] [Summary] [
     if ((s.n gte need) not) [
       def msg `Stats: need at least ${need} value(s) (have ${s.n})`
       raise bad_input msg
@@ -211,37 +214,37 @@ def require-n fn [
 # --- public accumulator words ---------------------------------------
 
 def stat-push fn [
-  [x:Any s:Summary] [Summary] [
-    s welford-push (x convert Float)
+  [s:Summary x:Any] [Summary] [
+    welford-push s (convert Float x)
   ]
 ]
 
 def stat-push-all fn [
-  [xs:List s:Summary] [Summary] [
-    s xs [var [[x acc] acc welford-push (x convert Float)]] fold
+  [s:Summary xs:List] [Summary] [
+    s xs [var [[x acc] welford-push acc (convert Float x)]] fold
   ]
 ]
 
 # Parallel-combine the moments of b into a (Chan/Pébay), mutating a.
 def stat-merge fn [
-  [b:Summary a:Summary] [Summary] [
+  [a:Summary b:Summary] [Summary] [
     def na a.n
     def nb b.n
     if (nb eq 0) [a] [
     if (na eq 0) [
-      a set n nb end
-      a set mean b.mean end
-      a set m2 b.m2 end
-      a set m3 b.m3 end
-      a set m4 b.m4 end
-      a set min b.min end
-      a set max b.max end
+      set n (b.n) a end
+      set mean (b.mean) a end
+      set m2 (b.m2) a end
+      set m3 (b.m3) a end
+      set m4 (b.m4) a end
+      set min (b.min) a end
+      set max (b.max) a end
       a
     ] [
-      def naf (na convert Float)
-      def nbf (nb convert Float)
+      def naf (convert Float na)
+      def nbf (convert Float nb)
       def nt  (na add nb)
-      def ntf (nt convert Float)
+      def ntf (convert Float nt)
       def delta (b.mean sub a.mean)
       def d2 (delta mul delta)
       def d3 (d2 mul delta)
@@ -253,13 +256,13 @@ def stat-merge fn [
       def m4cross (6.0 mul d2 mul (((naf mul naf) mul b.m2) add ((nbf mul nbf) mul a.m2)) div (ntf mul ntf))
       def m4lin (4.0 mul delta mul ((naf mul b.m3) sub (nbf mul a.m3)) div ntf)
       def m4t ((((a.m4 add b.m4) add m4core) add m4cross) add m4lin)
-      a set mean mean1 end
-      a set m2 m2t end
-      a set m3 m3t end
-      a set m4 m4t end
-      a set n nt end
-      if (b.min lt a.min) [a set min b.min end] []
-      if (b.max gt a.max) [a set max b.max end] []
+      set mean (mean1) a end
+      set m2 (m2t) a end
+      set m3 (m3t) a end
+      set m4 (m4t) a end
+      set n (nt) a end
+      if (b.min lt a.min) [set min (b.min) a end] []
+      if (b.max gt a.max) [set max (b.max) a end] []
       a
     ]]
   ]
@@ -269,91 +272,91 @@ def stat-merge fn [
 # --- descriptive words (List | Summary) -----------------------------
 
 def stat-count fn [
-  [x:Any] [Integer] [
-    (x as-summary) get n
+  [x:(List tor Summary)] [Integer] [
+    (as-summary x) get n
   ]
 ]
 
 def stat-sum fn [
-  [x:Any] [Float] [
-    def s (x as-summary)
-    s.mean mul (s.n convert Float)
+  [x:(List tor Summary)] [Float] [
+    def s (as-summary x)
+    s.mean mul (convert Float s.n)
   ]
 ]
 
 def stat-mean fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 1)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 1)
     s.mean
   ]
 ]
 
 def stat-pvariance fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 1)
-    s.m2 div (s.n convert Float)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 1)
+    s.m2 div (convert Float s.n)
   ]
 ]
 
 def stat-variance fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 2)
-    s.m2 div ((s.n sub 1) convert Float)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 2)
+    s.m2 div (convert Float (s.n sub 1))
   ]
 ]
 
 def stat-pstddev fn [
-  [x:Any] [Float] [
-    (x stat-pvariance) MathUtil.sqrt
+  [x:(List tor Summary)] [Float] [
+    MathUtil.sqrt (stat-pvariance x)
   ]
 ]
 
 def stat-stddev fn [
-  [x:Any] [Float] [
-    (x stat-variance) MathUtil.sqrt
+  [x:(List tor Summary)] [Float] [
+    MathUtil.sqrt (stat-variance x)
   ]
 ]
 
 def stat-min fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 1)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 1)
     s.min
   ]
 ]
 
 def stat-max fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 1)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 1)
     s.max
   ]
 ]
 
 def stat-range fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 1)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 1)
     s.max sub s.min
   ]
 ]
 
 # Biased sample skewness g1 = (m3/n) / (m2/n)^(3/2).
 def stat-skewness fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 2)
-    def nf (s.n convert Float)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 2)
+    def nf (convert Float s.n)
     def var-p (s.m2 div nf)
     if (var-p lte 0.0) [
       def msg `Stats.skewness: undefined for zero-variance data`
       raise bad_input msg
     ] []
-    (s.m3 div nf) div (var-p MathUtil.sqrt mul var-p)
+    (s.m3 div nf) div ((MathUtil.sqrt var-p) mul var-p)
   ]
 ]
 
 # Biased excess kurtosis g2 = (m4/n) / (m2/n)^2 - 3.
 def stat-kurtosis fn [
-  [x:Any] [Float] [
-    def s ((x as-summary) require-n 2)
-    def nf (s.n convert Float)
+  [x:(List tor Summary)] [Float] [
+    def s (require-n (as-summary x) 2)
+    def nf (convert Float s.n)
     def var-p (s.m2 div nf)
     if (var-p lte 0.0) [
       def msg `Stats.kurtosis: undefined for zero-variance data`
@@ -368,7 +371,7 @@ def stat-kurtosis fn [
 
 # Linear-interpolated quantile (NumPy/R type-7) over sorted data.
 def quantile-of fn [
-  [q:Float fs:List] [Float] [
+  [fs:List q:Float] [Float] [
     def n (fs size)
     if (n eq 0) [
       def msg `Stats.quantile: empty data`
@@ -378,12 +381,12 @@ def quantile-of fn [
       def msg `Stats.quantile: q must be in [0, 1] (got ${q})`
       raise bad_input msg
     ]
-    def sorted (fs sorted-floats)
+    def sorted (sorted-floats fs)
     if (n eq 1) [sorted get 0] [
-      def pos (q mul ((n sub 1) convert Float))
-      def lo (pos MathUtil.floor)
-      def hi (pos MathUtil.ceil)
-      def frac (pos sub (lo convert Float))
+      def pos (q mul (convert Float (n sub 1)))
+      def lo (MathUtil.floor pos)
+      def hi (MathUtil.ceil pos)
+      def frac (pos sub (convert Float lo))
       def vlo (sorted get (lo))
       def vhi (sorted get (hi))
       vlo add (frac mul (vhi sub vlo))
@@ -392,28 +395,28 @@ def quantile-of fn [
 ]
 
 def stat-quantile fn [
-  [q:Any xs:Any] [Float] [
-    quantile-of (q convert Float) (xs require-list)
+  [xs:Any q:Any] [Float] [
+    quantile-of (require-list xs) (convert Float q)
   ]
 ]
 
 def stat-median fn [
   [xs:Any] [Float] [
-    quantile-of 0.5 (xs require-list)
+    quantile-of (require-list xs) 0.5
   ]
 ]
 
 def stat-iqr fn [
   [xs:Any] [Float] [
-    def fs (xs require-list)
-    (quantile-of 0.75 fs) sub (quantile-of 0.25 fs)
+    def fs (require-list xs)
+    (quantile-of fs 0.75) sub (quantile-of fs 0.25)
   ]
 ]
 
 # Most frequent value; on a tie the first such value in ascending order.
 def stat-mode fn [
   [xs:Any] [Float] [
-    def fs ((xs require-list) sorted-floats)
+    def fs (sorted-floats (require-list xs))
     if ((fs size) eq 0) [
       def msg `Stats.mode: empty data`
       raise bad_input msg
@@ -436,9 +439,9 @@ def stat-mode fn [
 
 # Σ(x-mx)(y-my) over paired data, with the means computed in-pass.
 def co-moment fn [
-  [ys:List xs:List] [Float] [
-    def fx (xs to-floats)
-    def fy (ys to-floats)
+  [xs:List ys:List] [Float] [
+    def fx (to-floats xs)
+    def fy (to-floats ys)
     def n (fx size)
     if (n eq (fy size)) [] [
       def msg `Stats: paired data must be the same length (${n} vs ${fy size})`
@@ -448,8 +451,8 @@ def co-moment fn [
       def msg `Stats: paired data must be non-empty`
       raise bad_input msg
     ]
-    def mx (fx sum-floats div (n convert Float))
-    def my (fy sum-floats div (n convert Float))
+    def mx ((sum-floats fx) div (convert Float n))
+    def my ((sum-floats fy) div (convert Float n))
     0.0 (iota n) [var [[i acc]
       acc add (((fx get (i)) sub mx) mul ((fy get (i)) sub my))
     ]] fold
@@ -457,49 +460,48 @@ def co-moment fn [
 ]
 
 def stat-pcovariance fn [
-  [ys:List xs:List] [Float] [
-    def c (xs co-moment ys)
-    c div ((xs size) convert Float)
+  [xs:List ys:List] [Float] [
+    (co-moment xs ys) div (convert Float (xs size))
   ]
 ]
 
 def stat-covariance fn [
-  [ys:List xs:List] [Float] [
+  [xs:List ys:List] [Float] [
     def n (xs size)
     if (n gte 2) [] [
       def msg `Stats.covariance: need at least 2 paired values`
       raise bad_input msg
     ]
-    (xs co-moment ys) div ((n sub 1) convert Float)
+    (co-moment xs ys) div (convert Float (n sub 1))
   ]
 ]
 
 def stat-correlation fn [
-  [ys:List xs:List] [Float] [
-    def sx (xs stat-pstddev)
-    def sy (ys stat-pstddev)
+  [xs:List ys:List] [Float] [
+    def sx (stat-pstddev xs)
+    def sy (stat-pstddev ys)
     if ((sx gt 0.0) and (sy gt 0.0)) [] [
       def msg `Stats.correlation: undefined when a variable has zero variance`
       raise bad_input msg
     ]
     def n (xs size)
-    def cov-p ((xs co-moment ys) div (n convert Float))
+    def cov-p ((co-moment xs ys) div (convert Float n))
     cov-p div (sx mul sy)
   ]
 ]
 
 # Ordinary least squares for one predictor: y ≈ slope*x + intercept.
 def stat-linreg fn [
-  [ys:List xs:List] [Map] [
+  [xs:List ys:List] [Map] [
     def n (xs size)
     if (n gte 2) [] [
       def msg `Stats.linreg: need at least 2 paired values`
       raise bad_input msg
     ]
-    def fx (xs to-floats)
-    def fy (ys to-floats)
-    def mx (fx sum-floats div (n convert Float))
-    def my (fy sum-floats div (n convert Float))
+    def fx (to-floats xs)
+    def fy (to-floats ys)
+    def mx ((sum-floats fx) div (convert Float n))
+    def my ((sum-floats fy) div (convert Float n))
     def sxx (0.0 (iota n) [var [[i acc] acc add (((fx get (i)) sub mx) mul ((fx get (i)) sub mx))]] fold)
     if (sxx gt 0.0) [] [
       def msg `Stats.linreg: predictor has zero variance`
@@ -509,7 +511,7 @@ def stat-linreg fn [
     def syy (0.0 (iota n) [var [[i acc] acc add (((fy get (i)) sub my) mul ((fy get (i)) sub my))]] fold)
     def slope (sxy div sxx)
     def intercept (my sub (slope mul mx))
-    def r (if (syy gt 0.0) [sxy div ((sxx mul syy) MathUtil.sqrt)] [0.0])
+    def r (if (syy gt 0.0) [sxy div (MathUtil.sqrt (sxx mul syy))] [0.0])
     do {slope: [slope], intercept: [intercept], r: [r], r2: [r mul r]}
   ]
 ]
@@ -519,9 +521,9 @@ def stat-linreg fn [
 
 def stat-zscores fn [
   [xs:Any] [List] [
-    def fs (xs require-list)
-    def mu (fs stat-mean)
-    def sd (fs stat-stddev)
+    def fs (require-list xs)
+    def mu (stat-mean fs)
+    def sd (stat-stddev fs)
     if (sd gt 0.0) [] [
       def msg `Stats.zscores: zero standard deviation`
       raise bad_input msg
@@ -534,17 +536,17 @@ def stat-zscores fn [
 def erf-approx fn [
   [x:Float] [Float] [
     def sgn (if (x lt 0.0) [-1.0] [1.0])
-    def ax (x MathUtil.abs convert Float)
+    def ax (convert Float (MathUtil.abs x))
     def t (1.0 div (1.0 add (0.3275911 mul ax)))
     def poly (t mul (0.254829592 add (t mul (-0.284496736 add (t mul (1.421413741 add (t mul (-1.453152027 add (t mul 1.061405429)))))))))
-    def y (1.0 sub (poly mul ((ax mul ax) MathUtil.negate MathUtil.exp)))
+    def y (1.0 sub (poly mul (MathUtil.exp (MathUtil.negate (ax mul ax)))))
     sgn mul y
   ]
 ]
 
 def sigma-of fn [
   [params:Map] [Float] [
-    def sigma ((params get sigma) convert Float)
+    def sigma (convert Float (params get sigma))
     if (sigma gt 0.0) [] [
       def msg `Stats: sigma must be > 0 (got ${sigma})`
       raise bad_input msg
@@ -554,21 +556,21 @@ def sigma-of fn [
 ]
 
 def stat-normal-pdf fn [
-  [params:Map x:Any] [Float] [
-    def mu ((params get mu) convert Float)
-    def sigma (params sigma-of)
-    def z ((x convert Float) sub mu div sigma)
-    def norm (1.0 div (sigma mul ((2.0 mul MathUtil.pi) MathUtil.sqrt)))
-    norm mul ((-0.5 mul z mul z) MathUtil.exp)
+  [x:Any params:Map] [Float] [
+    def mu (convert Float (params get mu))
+    def sigma (sigma-of params)
+    def z (((convert Float x) sub mu) div sigma)
+    def norm (1.0 div (sigma mul (MathUtil.sqrt (2.0 mul MathUtil.pi))))
+    norm mul (MathUtil.exp (-0.5 mul z mul z))
   ]
 ]
 
 def stat-normal-cdf fn [
-  [params:Map x:Any] [Float] [
-    def mu ((params get mu) convert Float)
-    def sigma (params sigma-of)
-    def z ((x convert Float) sub mu div sigma)
-    0.5 mul (1.0 add (erf-approx (z div (2.0 MathUtil.sqrt))))
+  [x:Any params:Map] [Float] [
+    def mu (convert Float (params get mu))
+    def sigma (sigma-of params)
+    def z (((convert Float x) sub mu) div sigma)
+    0.5 mul (1.0 add (erf-approx (z div (MathUtil.sqrt 2.0))))
   ]
 ]
 
@@ -585,26 +587,26 @@ def columns-of fn [
 
 def stat-col-means fn [
   [mat:Matrix] [List] [
-    (mat columns-of) each [var [[c] (c stat-mean)]]
+    (columns-of mat) each [var [[c] (stat-mean c)]]
   ]
 ]
 
 def stat-col-variances fn [
   [mat:Matrix] [List] [
-    (mat columns-of) each [var [[c] (c stat-variance)]]
+    (columns-of mat) each [var [[c] (stat-variance c)]]
   ]
 ]
 
 def stat-col-stddevs fn [
   [mat:Matrix] [List] [
-    (mat columns-of) each [var [[c] (c stat-stddev)]]
+    (columns-of mat) each [var [[c] (stat-stddev c)]]
   ]
 ]
 
 # Sample covariance matrix: (1/(n-1)) Xcᵀ Xc, Xc the column-centered data.
 def centered-rows fn [
   [mat:Matrix] [List] [
-    def means (mat stat-col-means)
+    def means (stat-col-means mat)
     def nrows (MatrixUtil.rows mat)
     def ncols (MatrixUtil.cols mat)
     (iota nrows) each [var [[i]
@@ -623,18 +625,18 @@ def stat-cov-matrix fn [
       def msg `Stats.cov-matrix: need at least 2 rows (observations)`
       raise bad_input msg
     ]
-    def xc (MatrixUtil.create (mat centered-rows))
+    def xc (MatrixUtil.create (centered-rows mat))
     # mat-mul X Y computes Y@X, so this is Xcᵀ @ Xc.
     def gram (MatrixUtil.mat-mul xc (MatrixUtil.transpose xc))
-    MatrixUtil.scale (1.0 div ((nrows sub 1) convert Float)) gram
+    MatrixUtil.scale (1.0 div (convert Float (nrows sub 1))) gram
   ]
 ]
 
 def stat-cor-matrix fn [
   [mat:Matrix] [Matrix] [
-    def cov (mat stat-cov-matrix)
+    def cov (stat-cov-matrix mat)
     def k (MatrixUtil.cols cov)
-    def sds ((iota k) each [var [[i] (((cov MatrixUtil.row i) get (i)) MathUtil.sqrt)]])
+    def sds ((iota k) each [var [[i] (MathUtil.sqrt ((cov MatrixUtil.row i) get (i)))]])
     MatrixUtil.create ((iota k) each [var [[i]
       def crow (cov MatrixUtil.row i)
       (iota k) each [var [[j]
@@ -646,8 +648,8 @@ def stat-cor-matrix fn [
 
 def stat-standardize fn [
   [mat:Matrix] [Matrix] [
-    def means (mat stat-col-means)
-    def sds (mat stat-col-stddevs)
+    def means (stat-col-means mat)
+    def sds (stat-col-stddevs mat)
     def nrows (MatrixUtil.rows mat)
     def ncols (MatrixUtil.cols mat)
     MatrixUtil.create ((iota nrows) each [var [[i]
@@ -668,29 +670,29 @@ def stat-standardize fn [
 # place. A zero pivot (within tolerance) raises `singular`.
 
 def solve-linear fn [
-  [b:List a:List] [List] [
+  [a:List b:List] [List] [
     def n (a size)
     def rows (make Array ((iota n) each [var [[i]
-      make Array ((a get (i)) each [var [[v] (v convert Float)]])
+      make Array ((a get (i)) each [var [[v] (convert Float v)]])
     ]]))
-    def rhs (make Array (b each [var [[v] (v convert Float)]]))
+    def rhs (make Array (b each [var [[v] (convert Float v)]]))
     def _elim ((iota n) each [var [[col]
       # find pivot row with the largest |value| in this column
       def piv (col (iota n) [var [[r best]
-        if ((r gte col) and ((((rows get (r)) get (col)) MathUtil.abs) gt (((rows get (best)) get (col)) MathUtil.abs))) [r] [best]
+        if ((r gte col) and ((MathUtil.abs ((rows get (r)) get (col))) gt (MathUtil.abs ((rows get (best)) get (col))))) [r] [best]
       ]] fold)
-      def pv (((rows get (piv)) get (col)) MathUtil.abs)
+      def pv (MathUtil.abs ((rows get (piv)) get (col)))
       if (pv gt 0.000000001) [] [
         def msg `Stats.ols: system is singular (zero pivot at column ${col})`
         raise singular msg
       ]
       # swap pivot row into place (rows and rhs)
       def tmp-row (rows get (col))
-      rows set (col) (rows get (piv)) end
-      rows set (piv) (tmp-row) end
+      set (col) (rows get (piv)) rows end
+      set (piv) (tmp-row) rows end
       def tmp-rhs (rhs get (col))
-      rhs set (col) (rhs get (piv)) end
-      rhs set (piv) (tmp-rhs) end
+      set (col) (rhs get (piv)) rhs end
+      set (piv) (tmp-rhs) rhs end
       # eliminate below
       def pivrow (rows get (col))
       def pivval (pivrow get (col))
@@ -699,10 +701,10 @@ def solve-linear fn [
           def rr (rows get (r))
           def factor ((rr get (col)) div pivval)
           def _c ((iota n) each [var [[c]
-            rr set (c) ((rr get (c)) sub (factor mul (pivrow get (c)))) end
+            set (c) ((rr get (c)) sub (factor mul (pivrow get (c)))) rr end
             0
           ]])
-          rhs set (r) ((rhs get (r)) sub (factor mul (rhs get (col)))) end
+          set (r) ((rhs get (r)) sub (factor mul (rhs get (col)))) rhs end
           0
         ] [0]
       ]])
@@ -716,7 +718,7 @@ def solve-linear fn [
       def s (0.0 (iota n) [var [[j acc]
         if (j gt i) [acc add ((rr get (j)) mul (x get (j)))] [acc]
       ]] fold)
-      x set (i) (((rhs get (i)) sub s) div (rr get (i))) end
+      set (i) (((rhs get (i)) sub s) div (rr get (i))) x end
       0
     ]])
     convert List x
@@ -727,7 +729,7 @@ def solve-linear fn [
 # predictors) and response ys, via the normal equations XᵀX b = Xᵀy.
 # Prepend a column of 1s to x yourself for an intercept term.
 def stat-ols fn [
-  [ys:List x:Matrix] [List] [
+  [x:Matrix ys:List] [List] [
     def nrows (MatrixUtil.rows x)
     if (nrows eq (ys size)) [] [
       def msg `Stats.ols: rows of X (${nrows}) must match length of y (${ys size})`
@@ -736,10 +738,10 @@ def stat-ols fn [
     # mat-mul X Y computes Y@X, so this is Xᵀ @ X.
     def xtx (MatrixUtil.mat-mul x (MatrixUtil.transpose x))
     def k (MatrixUtil.cols x)
-    def fy (ys to-floats)
+    def fy (to-floats ys)
     def xty ((iota k) each [var [[j] (MatrixUtil.dot (x MatrixUtil.col j) fy)]])
     def arows ((iota k) each [var [[i] xtx MatrixUtil.row i]])
-    arows solve-linear xty
+    solve-linear arows xty
   ]
 ]
 
@@ -775,13 +777,13 @@ def stat-decode fn [
       # Coerce field types: jsonic renders whole-valued Floats without a
       # decimal point, so a parsed moment can come back as an Integer.
       make Summary {
-        n:    ((payload !. n) convert Integer)
-        mean: ((payload !. mean) convert Float)
-        m2:   ((payload !. m2) convert Float)
-        m3:   ((payload !. m3) convert Float)
-        m4:   ((payload !. m4) convert Float)
-        min:  ((payload !. min) convert Float)
-        max:  ((payload !. max) convert Float)
+        n:    (convert Integer (payload !. n))
+        mean: (convert Float (payload !. mean))
+        m2:   (convert Float (payload !. m2))
+        m3:   (convert Float (payload !. m3))
+        m4:   (convert Float (payload !. m4))
+        min:  (convert Float (payload !. min))
+        max:  (convert Float (payload !. max))
       }
     ] error [
       def msg `Stats.decode: payload is not a Stats.encode snapshot (need integer n, floats mean m2 m3 m4 min max)`
