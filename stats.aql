@@ -273,7 +273,7 @@ def stat-merge fn [
 
 def stat-count fn [
   [x:(List tor Summary)] [Integer] [
-    (as-summary x) get n
+    (as-summary x).n
   ]
 ]
 
@@ -423,14 +423,14 @@ def stat-mode fn [
     ] []
     def seed (do {best: [fs get 0], best-count: [1], cur: [fs get 0], cur-count: [0]})
     def acc (seed fs [var [[v st]
-      def same (v eq (st get cur))
-      def cc (if same [(st get cur-count) add 1] [1])
-      def st1 (do {best: [st get best], best-count: [st get best-count], cur: [v], cur-count: [cc]})
-      if (cc gt (st1 get best-count)) [
+      def same (v eq (st.cur))
+      def cc (if same [(st.cur-count) add 1] [1])
+      def st1 (do {best: [st.best], best-count: [st.best-count], cur: [v], cur-count: [cc]})
+      if (cc gt (st1.best-count)) [
         do {best: [v], best-count: [cc], cur: [v], cur-count: [cc]}
       ] [st1]
     ]] fold)
-    acc get best
+    acc.best
   ]
 ]
 
@@ -546,7 +546,7 @@ def erf-approx fn [
 
 def sigma-of fn [
   [params:Map] [Float] [
-    def sigma (convert Float (params get sigma))
+    def sigma (convert Float (params.sigma))
     if (sigma gt 0.0) [] [
       def msg `Stats: sigma must be > 0 (got ${sigma})`
       raise bad_input msg
@@ -557,7 +557,7 @@ def sigma-of fn [
 
 def stat-normal-pdf fn [
   [x:Any params:Map] [Float] [
-    def mu (convert Float (params get mu))
+    def mu (convert Float (params.mu))
     def sigma (sigma-of params)
     def z (((convert Float x) sub mu) div sigma)
     def norm (1.0 div (sigma mul (MathUtil.sqrt (2.0 mul MathUtil.pi))))
@@ -567,7 +567,7 @@ def stat-normal-pdf fn [
 
 def stat-normal-cdf fn [
   [x:Any params:Map] [Float] [
-    def mu (convert Float (params get mu))
+    def mu (convert Float (params.mu))
     def sigma (sigma-of params)
     def z (((convert Float x) sub mu) div sigma)
     0.5 mul (1.0 add (erf-approx (z div (MathUtil.sqrt 2.0))))
@@ -774,16 +774,18 @@ def stat-decode fn [
       raise bad_payload msg
     ])
     do [
-      # Coerce field types: jsonic renders whole-valued Floats without a
-      # decimal point, so a parsed moment can come back as an Integer.
+      # With the StructUtil.parse float-fidelity fix, whole-valued Float
+      # moments round-trip as Float (e.g. `8.0`, not `8`), so the moments
+      # no longer need per-field coercion; n is read as the integer count
+      # it was encoded as.
       make Summary {
         n:    (convert Integer (payload !. n))
-        mean: (convert Float (payload !. mean))
-        m2:   (convert Float (payload !. m2))
-        m3:   (convert Float (payload !. m3))
-        m4:   (convert Float (payload !. m4))
-        min:  (convert Float (payload !. min))
-        max:  (convert Float (payload !. max))
+        mean: (payload !. mean)
+        m2:   (payload !. m2)
+        m3:   (payload !. m3)
+        m4:   (payload !. m4)
+        min:  (payload !. min)
+        max:  (payload !. max)
       }
     ] error [
       def msg `Stats.decode: payload is not a Stats.encode snapshot (need integer n, floats mean m2 m3 m4 min max)`

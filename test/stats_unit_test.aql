@@ -96,9 +96,9 @@ def near fn [
   def x [1 2 3 4 5]
   def y [2 4 5 4 5]
   def lr (Stats.linreg x y end)
-  true ((lr get slope)     close 0.6) Assert.ok end
-  true ((lr get intercept) close 2.2) Assert.ok end
-  true ((lr get r2)        close 0.6) Assert.ok end
+  true ((lr.slope)     close 0.6) Assert.ok end
+  true ((lr.intercept) close 2.2) Assert.ok end
+  true ((lr.r2)        close 0.6) Assert.ok end
 ] "linreg" Test.test end
 
 
@@ -176,18 +176,18 @@ def near fn [
 # --- error codes ---------------------------------------------------
 
 [
-  bad_input/q  ((do [Stats.mean [] end]) get code) Assert.equal end
-  bad_input/q  ((do [Stats.variance [5] end]) get code) Assert.equal end
-  bad_input/q  ((do [Stats.quantile [1 2 3] 1.5 end]) get code) Assert.equal end
-  bad_input/q  ((do [Stats.covariance [1 2 3] [1 2] end]) get code) Assert.equal end
-  needs_data/q ((do [Stats.median (Stats.summary [1 2 3] end) end]) get code) Assert.equal end
-  bad_payload/q ((do [Stats.decode "not a snapshot {" end]) get code) Assert.equal end
+  bad_input/q  ((do [Stats.mean [] end]).code) Assert.equal end
+  bad_input/q  ((do [Stats.variance [5] end]).code) Assert.equal end
+  bad_input/q  ((do [Stats.quantile [1 2 3] 1.5 end]).code) Assert.equal end
+  bad_input/q  ((do [Stats.covariance [1 2 3] [1 2] end]).code) Assert.equal end
+  needs_data/q ((do [Stats.median (Stats.summary [1 2 3] end) end]).code) Assert.equal end
+  bad_payload/q ((do [Stats.decode "not a snapshot {" end]).code) Assert.equal end
 ] "error-codes" Test.test end
 
 
 [
   def design (MatrixUtil.create [[1 1] [1 1] [1 1]])
-  singular/q ((do [Stats.ols design [1 2 3] end]) get code) Assert.equal end
+  singular/q ((do [Stats.ols design [1 2 3] end]).code) Assert.equal end
 ] "ols-singular" Test.test end
 
 

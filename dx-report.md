@@ -17,6 +17,29 @@ Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
 
 ---
 
+## Update (DX-driven aql fixes)
+
+**2026-06-25.** This module was migrated to aql HEAD's new accessor
+semantics and verified against a local aql build that carries three
+upstream fixes (comp/r frame over-pop, StructUtil.parse float-fidelity,
+and a checker `no_signature` fix). `get`/`getr` now *evaluate* their key,
+so the literal bare-word field reads this library used — `(as-summary x)
+get n`, `params get sigma`/`mu`, the `st`/`acc` map reads in `mode`, and
+the linreg-field and error-`code` reads in the suites — moved to the new
+dot sugar `recv.field` (with the quoted-atom `get field/q` form reserved
+for the receiver-less, value-on-the-stack case); parenthesised computed
+indexing such as `xs get (i)` is unchanged and intended. Because the
+StructUtil.parse float-fidelity fix makes whole-valued Float moments
+round-trip as Float (`8.0`, not `8`), the per-field `convert Float`
+coercion that `Stats.decode` carried as the §5 workaround was removed and
+the encode/decode round-trip stays green without it. All five `stats_*`
+suites are green and `aql check` reports 0 errors on the module and on
+each suite; this requires an aql build carrying these fixes — on older
+builds the bare-word reads raise `undefined_word` and decode loses Float
+type on whole-valued moments.
+
+---
+
 ## 1. 🔴 `get`/`set` read a bare word index as an atom key, silently
 
 `get`/`set` on a List or Array index, and on a Map/class field, share one
