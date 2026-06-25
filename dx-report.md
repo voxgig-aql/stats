@@ -1,231 +1,185 @@
-# Developer-experience report: bloom-filter on AQL
+# Developer-experience report: stats on AQL
 
-**Date:** 2026-06-11 (second round)
-**AQL build under test:** `aql-lang/aql` @ `7193a7d3`
-(`7193a7d3c69857207e44b4bd53541b9b0d4348aa`, main as of 2026-06-11;
-39 commits past `958c379b`, which this report previously covered;
-built locally with `GOFLAGS=-mod=mod`; version string now reports
-`aql 0.1.0-dev (git 7193a7d3c698)`).
-**Context:** re-verification round. The first 2026-06-11 report (at
-`958c379b`) filed eight issues after migrating this module to the
-class/Array/raise surface. Six of the eight — including all three
-🔴 — were fixed upstream within the same day's 39 commits, several
-visibly in direct response to the DX reports. Every verdict below was
-re-reproduced first-hand against the build above using the original
-minimal repros; the module's five test suites pass on this build
-unmodified.
+**Date:** 2026-06-25
+**AQL build under test:** `aql-lang/aql` @ `12a44e0`
+(`12a44e0c6ca3f49cd35a871b573fd96bc13d7fd6`, main as of 2026-06-24, PR
+#189; built locally with `GOFLAGS=-mod=mod`; `aql -version` reports
+`aql 12a44e0-main`).
+**Context:** gotchas hit while building this statistics library — a new
+module exercising `aql:matrix-util`, `aql:math-util`, the numeric types,
+classes, and `do`/`error` against this build. All five suites
+(`stats_*`) pass on it across the interpreter, `aql check` (0 errors),
+and `aql --compile` (identical to the interpreter), enforced by
+`test/divergence/run.sh`.
 
 Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
 **🟡 medium** (friction, clear workaround) · **🟢 low** (papercut).
 
 ---
 
-## Fixed since the `958c379b` report
+## 1. 🔴 `get`/`set` read a bare word index as an atom key, silently
 
-- **🔴→✅ Guard `if` + following `def`: guards fire first now**
-  (aql `00cb7a79`, "guards fire before the next statement"). The
-  defining repro — an else-less validation `if` whose `raise` was
-  pre-empted by eager evaluation of the next `def` statement — now
-  raises the guard's own error:
-
-  ```aql
-  def t fn [ [x:Any] [Integer] [
-    if ((x is Float) not) [
-      def m "not a float"
-      raise bad_input m
-    ]
-    def y (x gt 0.0)
-    7
-  ] ]
-  do [t none] error [ get code ]    # => bad_input  (was: incomparable)
-  ```
-
-  `bloom.aql` keeps the explicit empty else `[]` on its guards anyway —
-  it costs nothing, reads as intent, and stays correct on older builds.
-
-- **🔴→✅ Class-field defaults are per-instance** (aql `607cd1b9`).
-  A mutable schema default (`store:(flex {})`) is no longer one shared
-  value: writing through one instance is invisible to another. The
-  Python-style mutable-default trap is gone. (`BloomFilter` still
-  declares `bits` as a required typed field and passes a fresh Array
-  per `make` — that remains the clearer design.)
-
-- **🔴→✅ `Object` instances format** (same commit, "open objects
-  render"). `print (object {a:1}) end` prints `Object{a:1}`; a bare
-  `make Object {}` on the final stack prints `Object{}` instead of
-  SIGSEGV-ing the interpreter.
-
-- **🟡→✅ `raise` accepts template-string messages** (aql `00cb7a79`,
-  "templates fill typed slots"). Both the bare and parenthesised forms
-  now work, with the code and interpolated message intact:
-
-  ```aql
-  raise bad_input `got ${t}`        # => bad_input, message "got x"
-  ```
-
-  The bind-first idiom (`def msg …` then `raise code msg`) is no longer
-  required; this module keeps it for back-compat and readability.
-
-- **🟢→✅ `getr` raises the documented `not_found`** (aql `93ebcd40`;
-  was `getr_error`, contradicting REFERENCE.md).
-
-- **🟢→✅ `StructUtil.jsonify` emits Floats as JSON numbers** (aql
-  `862546fd`); a `jsonify` → `parse` round trip preserves the Float
-  type now. (`Bloom.encode` continues to use canon — unchanged, just
-  no longer the only type-preserving option.)
-
-Also fixed without having been formally filed: `aql -version` now
-stamps the git commit (`1981f601`), so "which build am I on?" — a
-recurring nuisance across these reports — answers itself.
-
----
-
-## Still open
-
-### 1. 🟡 `print` forward-arg collection reverses/breaks chained prints
-
-Unchanged through three builds:
+`get`/`set` on a List or Array index, and on a Map/class field, share one
+surface: the index/key argument is taken **literally**. A bare *word*
+there is treated as an atom (a field name), not evaluated as a variable.
+With a literal integer it works; with a variable it silently returns
+`None`:
 
 ```aql
-(1 add 1) print (2 add 2) print     # prints 4 then 2 — the first
-                                    # print collects (2 add 2)
+def s [10.0 20.0 30.0 40.0]
+def i 1
+s get 1     # => 20.0   (literal index: fine)
+s get i     # => None   (variable read as the atom `i`, not its value 1)
+s get (i)   # => 20.0   (parenthesise to force evaluation)
 ```
 
-The reliable idiom remains one fully-grouped value per statement —
-`print (`label: ${value}`) end` — with which output appears strictly
-in source order. Every print in this module's tests and docs uses it.
+The damage is that `None` then flows into arithmetic and fails far from
+the cause (`no matching signature for sub`, with a `None` receiver). The
+fix is uniform: **parenthesise every variable index** — `xs get (i)`,
+`arr set (j) (value)`. (Bare *field-name* keys are correct and intended:
+`e get code`, `s set mean (m)`, `params get sigma`. The value position of
+`set` evaluates a bare variable fine; only the index/key position is
+literal.) `bloom.aql` already parenthesised its bit-array indices; this
+report documents *why* for the order-statistic and solver code here.
 
-### 2. 🟢 `aql check` is quieter but still not gating-ready
+---
 
-Improved by `d867f1af` (unknown-type results no longer produce
-strict-`Any` false errors): the spurious `no_signature` reports for
-`getr`, `each`, and user fns are gone — `aql check bloom.aql` dropped
-from ~40 finding lines to 30. Still standing in the way of CI use on
-this module:
+## 2. 🔴 a map-literal value `{k: [expr]}` only evaluates under `do`
 
-- two false `no_signature: no matching signature for mul` hits in
-  `derive-m`/`derive-k` (arithmetic flowing through `convert Float`),
-  plus a consequent `fn_body_error` for `derive-k` — the same code
-  runs (and is property-tested) fine;
-- `unused_def` warnings for every word referenced only by the
-  `export "Bloom" {…}` map — the checker doesn't treat the export map
-  as a use site.
-
-### 3. ✅ Bytecode (`--compile`) each-body block-local divergence — fixed upstream (`407feda`)
-
-> **Resolved 2026-06-24.** The divergence below is **fixed** on aql
-> `407feda` (the reduced repro is byte-identical between interpreter and
-> `--compile`), along with two short-lived `main` regressions that broke
-> the library on the 2026-06-23 tips — a `None`-in-template interpolation
-> bug and `convert`/fold `no_signature` check false positives (all in
-> `f247557` / `fc47452`; see `aql-backend-report.md` and upstream
-> `design/CLIENT-FIXES-2026-06-24.md`). `test/divergence/run.sh` now pins
-> `407feda` and every suite is clean across interpreter, `aql check` (0
-> errors), and `aql --compile`. The original finding is kept below as the
-> record; the unit suite's top-level `_seen` fixture is retained (harmless,
-> and keeps the suite robust on older builds).
-
-Newer aql can run a program through a bytecode backend instead of the
-interpreter, selectable at the CLI: `aql --compile X` (bytecode when
-compilable, else a *silent* fallback to the interpreter — documented to be
-identical, "opt-in performance, never semantics") and `aql --force-compile X`
-(require the bytecode path, or abort with a refusal reason). A differential
-test (`test/divergence/`, run with `test/divergence/run.sh`) checks the
-contract `aql --compile X == aql X` across this library's suites.
-
-Most of it holds — and that is real progress: the loop-free core
-(`make`/`add`/`contains`/`merge`/`encode`/`decode`) now **fully compiles**
-under `--force-compile` and returns byte-identical results, where at this
-module's pin (`7193a7d3`) the bytecode path couldn't run the library at
-all. The one sharp edge: a compiled `each` body **drops a block-local
-binding** from the enclosing block. Reduced repro (passes on the
-interpreter, wrong under `--compile`):
+The bracketed-value form in a map literal is evaluated **only** when the
+literal is prefixed with `do`. A bare `{…}` stores the brackets as a
+literal List:
 
 ```aql
-import "aql:test" end
-import "./bloom.aql" end
-[ def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (iota 50 each [ var [[i] bf Bloom.add (convert String i) end 0 ] ])
-  def cnt (bf Bloom.count end)
-  true (45 lte cnt) Assert.equal end
-] "count-within-tolerance" Test.test end
-# interpreter => passes
-# --compile   => each: element 0: [aql/undefined_word]: undefined word: bf
+def v 23.0
+def a {best: [v]}        #  a.best == [23.0]   (a one-element List!)
+def b (do {best: [v]})   #  b.best == 23.0     (evaluated)
 ```
 
-Inside the `each` the compiled path can't see the block-local `bf`, so
-`bf Bloom.add …` raises `undefined word: bf`. The damage is that this leaks
-through `--compile` (TRY): the emitter thinks it can lower the body, so it
-does *not* fall back to the interpreter, and the wrong result escapes —
-breaking the "identical, never semantics" guarantee. Trigger is narrow: a
-*block-local* `def` referenced from an `each` body. A **top-level** binding
-survives; a single-expression top-level loop is instead *refused* (`each`
-Stage 2/3) and falls back cleanly. Upstream aql bug, not a bloom defect.
-
-The fix on our side is one structural choice: `test/bloom_unit_test.aql`
-builds its bulk fixture (`_seen`) at **top level** rather than inside the
-`Test.test` block — keeping it in scope for the compiler, and (the leading
-underscore) skipping `aql check`'s unused_def false positive for body-only
-defs. With that, every suite is clean across all three surfaces
-(interpreter, `aql check` with 0 errors, and `aql --compile` identical to
-the interpreter); `test/divergence/run.sh` enforces it. Tested against aql
-`c44d994` (the harness builds a newer aql than this module's pin, since the
-bytecode CLI postdates `7193a7d3`). See `test/divergence/README.md`.
+This bit the `mode` word: a seed state built with a bare `{best: [fs get
+0] …}` carried `best` as `[23.0]` instead of `23.0`, so for all-distinct
+data (where the fold never enters the `do {…}` update branch) `mode`
+returned a List. A property test (`mode-is-a-member`) caught it. Fix:
+build every map that uses the `[expr]` value form with `do {…}`. (The
+bloom module only ever used `do {…}`, so it never saw this.)
 
 ---
 
-## Observations on the new build
+## 3. 🟡 `MatrixUtil.mat-mul X Y` computes `Y @ X` (forward args reversed)
 
-- **The DX feedback loop works.** Six issues filed against `958c379b`
-  were fixed within 39 commits, with commit messages that read
-  straight off the report ("guards fire before the next statement",
-  "per-instance mutable class defaults; open objects render"). A
-  parallel report from the `aql:decision` module got the same
-  treatment (`1981f601`), and that module moved out of core
-  (`a7882da9`).
-- **New language surface since `958c379b`** (not yet exercised by this
-  module): lambda arrows (`(x:Integer => body)`, `ec35e87a`/
-  `dfe262d6`), map overloads for `each`/`fold`/`filter` plus `keys`/
-  `vals` and a `KeyVal` entry type (`c6ed6e1a`), a `canon` word for
-  round-trippable source (`c0b727bf`), type-valued params
-  (`ce9914a3`), and a categorised `describe` with guaranteed-complete
-  word docs (`ce133d6c`/`fd82aee9`). The `keys`/`vals` words would
-  have simplified the sparse-map bit store this module used two
-  designs ago; the packed-Array design doesn't need them.
-- **Stability:** all five suites, the AGENTS.md verification script,
-  and both tutorial scripts produce byte-identical results on
-  `958c379b` → `7193a7d3`. Hashing, sizing, encode payloads, and the
-  measured tutorial false-positive rate (97/1000 at p = 0.1) are
-  unchanged.
+The two forward operands of `mat-mul` bind in reverse of the natural
+reading order, so `mat-mul A B` is the product **B·A**, not A·B:
+
+```aql
+def amat (MatrixUtil.create [[1 2 3] [4 5 6]])   # 2x3
+def bmat (MatrixUtil.create [[1 0] [0 1] [1 1]]) # 3x2
+MatrixUtil.mat-mul amat bmat   # => Matrix(3x3) — i.e. bmat·amat, not amat·bmat
+```
+
+Easy to miss because the spec's own examples are square (2×2), where the
+shape can't reveal the order. For `XᵀX` (covariance, OLS normal
+equations) this means writing `MatrixUtil.mat-mul X (MatrixUtil.transpose
+X)`. A wrong order here is a *silent* wrong-shape result, not an error,
+so it only surfaces in a value check — both the covariance matrix and OLS
+were initially wrong until pinned down against known answers.
+
+## 4. 🟡 `MatrixUtil.elem` takes `(col, row)`, not `(row, col)`
+
+`(m MatrixUtil.elem 1 0)` reads **column 1, row 0**. This *is* documented
+in the module spec, but it inverts the usual `[row][col]` convention and
+produced an out-of-bounds error before being spotted. This library reads
+matrices a row at a time with `MatrixUtil.row` (naturally indexed) and
+indexes into the resulting List, avoiding `elem` entirely.
+
+## 5. 🟡 `StructUtil.parse` collapses whole-valued Floats to Integer
+
+A snapshot field rendered as `42.0` parses back as Integer `42`, and a
+sealed `class` field declared `Float` then rejects it
+(`make: field "m2": expected Float … got Integer`). `Stats.decode`
+coerces every numeric field (`(payload !. m2) convert Float`,
+`… convert Integer` for `n`) so the round trip survives the
+type collapse. (`bloom.aql` only round-tripped integer bit indices, so it
+never hit this; its one Float, `p`, happened to be non-integral.)
 
 ---
 
-## Upgrade notes: `db828ec` → current main
+## 6. 🟡 `aql check` mis-reports `Any`→typed dispatch as a hard error
 
-Carried forward for anyone jumping from the older pin (all migrated in
-this module's history):
+A query word typed `[x:Any]` that dispatches `x` to a `List`-typed word
+draws `no_signature: no matching signature …` — a hard **error**, not a
+warning — even though it runs correctly (gradual `Any` should accept
+anything). It surfaces inconsistently: the same call is clean when `x`
+is provably a `List`, and errors when `x` is provably the *other* arm
+(here a `Summary`). The shape that type-checks cleanly in both
+directions: give the coercion helper a **union** param and narrow on the
+**positive** branch —
 
-| Change | Before | After |
-|--------|--------|-------|
-| `refine Object` removed | `def T (refine Object {…})` | `def T class {…}` (subclass: `refine <Class> {…}`) |
-| `StringUtil.indexof` argument order | haystack-first (`indexof <haystack> <needle>`) | **haystack-last** (`indexof <needle> <haystack>`); whole string module is subject-last |
-| Integer overflow | silent 64-bit wrap | hard `integer_overflow` error — mask (`BinUtil.band`) before multiplying if you relied on wrap |
-| `set` on a mutable container | returned values varied | Store / Object / Array / class: writes in place, **returns nothing**; FlexMap/FlexList: returns the node; Map: returns a new map |
-| `import` terminator | `import "x" end` required | `end` optional (structure-first); bare `import "x"` is the idiomatic form again |
-| Custom errors | only the undefined-word idiom | `raise` (code, message — template literals fine, payload map form) |
+```aql
+def as-summary fn [
+  [x:(List tor Summary)] [Summary] [
+    if (x is List) [x build-summary] [x]   # `is List` (not `is Summary`) narrows cleanly
+  ]
+]
+```
+
+`if (x is Summary) [x] [x build-summary]` (negative-branch narrowing)
+still errored; flipping to the positive `is List` test fixed it. This is
+the same class of `aql check` false-positive the bloom report noted
+(export-by-reference hides use sites); checked *through* a suite the
+words type-check, which is what the gating `divergence` job asserts.
+
+## 7. 🟢 the empty-list literal `[]` poisons downstream query types
+
+At top level, `def acc ([] Stats.summary end)` then `acc Stats.mean end`
+draws the §6 `no_signature` error, while `[1 2 3] Stats.summary` then
+`mean` does not — the empty literal `[]` is typed loosely enough that the
+checker can't carry it through the union param. It is invisible inside a
+`Test.test`/`each` body (those are opaque to the checker), so only
+top-level scripts see it. The empty constructor *runs* fine; the smoke
+test simply seeds from non-empty data to keep `aql check` at 0 errors.
+
+## 8. 🟢 single uppercase identifiers are parsed as type variables
+
+`def M (MatrixUtil.create …)` fails with `type: body must be a type value
+or literal, got Matrix(2x2)` — a one-letter uppercase name is taken as a
+type variable. Bind matrices (and any value) to a lowercase name (`def
+mat …`). Multi-letter PascalCase (`Summary`, used as a class) is fine.
+
+## 9. 🟢 `print` forward-collection (carried over)
+
+Unchanged from the bloom report: `print` collects a forward argument, so
+chained `(a) print (b) print` reverses. Every print in this module uses
+the one-value-per-statement idiom `print (value) end`.
+
+---
+
+## Observations
+
+- **`MathUtil.floor`/`ceil` return `Integer` when applied to a Float**
+  (`6.3 MathUtil.floor` ⇒ `6`, an Integer), so the result is directly
+  usable as a list index — convenient for the quantile interpolation.
+- **`aql:matrix-util` has no inverse/solve.** `mat-mul`, `transpose`,
+  `det`, `dot`, `scale`, and the accessors are enough for covariance and
+  correlation matrices, but OLS needs a linear solve, so this module
+  ships a small Gaussian-elimination solver (partial pivoting) over
+  `Array`s and feeds it `XᵀX` / `Xᵀy` built from the matrix words.
+- **The DX feedback loop still shows.** The two 🔴 items here are
+  call-convention sharp edges (literal index keys, `do`-gated map values)
+  rather than interpreter bugs; both are catchable by property tests, and
+  one was caught exactly that way.
 
 ---
 
 ## Summary
 
-| # | Severity | Issue | Status vs `958c379b` |
-|---|----------|-------|----------------------|
-| — | — | guard `if` + following `def` pre-empted (was §1 🔴) | **fixed** (`00cb7a79`) |
-| — | — | mutable class default shared across instances (was §2 🔴) | **fixed** (`607cd1b9`) |
-| — | — | formatting an `Object` crashes (was §3 🔴) | **fixed** (`607cd1b9`) |
-| — | — | `raise` rejects template messages (was §4 🟡) | **fixed** (`00cb7a79`) |
-| — | — | `getr` code ≠ docs (was §6 🟢) | **fixed** (`93ebcd40`) |
-| — | — | `jsonify` stringifies Floats (was §7 🟢) | **fixed** (`862546fd`) |
-| 1 | 🟡 | `print` forward-collection reverses/breaks | unchanged (3rd report) |
-| 2 | 🟢 | `aql check`: false `mul` no_signature; export-map words flagged unused | improved, still open |
-| 3 | ✅ | bytecode `--compile` block-local `each`-body divergence (+ two 2026-06-23 `main` regressions) | **fixed** upstream `f247557`/`fc47452`; harness pin moved to aql `407feda` |
+| # | Severity | Issue | Workaround |
+|---|----------|-------|------------|
+| 1 | 🔴 | `get`/`set` read a bare variable index as an atom key (silent `None`) | parenthesise variable indices: `xs get (i)` |
+| 2 | 🔴 | `{k: [expr]}` map value only evaluates under `do` | build such maps with `do {…}` |
+| 3 | 🟡 | `mat-mul X Y` is `Y·X` (silent wrong shape) | write `mat-mul X (transpose X)` for `XᵀX` |
+| 4 | 🟡 | `MatrixUtil.elem` is `(col, row)` | use `MatrixUtil.row` + List indexing |
+| 5 | 🟡 | `StructUtil.parse` collapses `42.0` → Integer | coerce field types on decode |
+| 6 | 🟡 | `aql check` flags `Any`→typed dispatch as an error | union param + positive `is List` narrowing |
+| 7 | 🟢 | empty `[]` literal poisons top-level query types in `aql check` | seed from non-empty data in checked scripts |
+| 8 | 🟢 | one-letter uppercase names parse as type variables | bind values to lowercase names |
+| 9 | 🟢 | `print` forward-collection reverses chains | one `print (value) end` per statement |

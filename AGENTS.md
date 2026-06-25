@@ -1,30 +1,41 @@
-# AGENTS.md — using the `Bloom` library
+# AGENTS.md — using the `Stats` library
 
-Guidance for an AI coding agent calling this bloom-filter library from an
+Guidance for an AI coding agent calling this statistics library from an
 AQL project. Every code block below is verified to run against
-`aql-lang/aql` @ `407feda`. If you read nothing else, read
-[The one calling rule](#the-one-calling-rule) and
+`aql-lang/aql` @ `12a44e0` (main, which ships `aql:matrix-util`). If you
+read nothing else, read [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 
 ## What it is
 
-A probabilistic set: "have I seen this item?" in little memory, with **no
-false negatives** and a tunable false-positive rate. The public surface
-is the `Bloom` namespace plus the `BloomFilter` type.
+Descriptive, inferential, and matrix statistics. The public surface is
+the `Stats` namespace plus the `Summary` type. There are two ways in:
+
+- **Pure functions over a List** — `[1 2 3] Stats.mean end`. Simple,
+  and the only way to get order statistics (median, quantile, mode).
+- **A streaming `Summary` accumulator** — build one, `push` values into
+  it, `merge` two of them, `encode`/`decode` it. It keeps running moments
+  (Welford/Pébay), so mean/variance/skewness/kurtosis cost one pass and a
+  merge is O(1). The same descriptive words read a `Summary` directly.
+
+The **dataset** words take an `aql:matrix-util` `Matrix` whose rows are
+observations and columns are variables.
 
 ## Import
 
 ```aql
-import "./bloom.aql"
+import "./stats.aql"
 ```
 
 - The path is resolved **relative to the working directory the script is
-  run from**, not relative to the importing file. Run scripts from the
-  directory where that relative path is valid (adjust the path otherwise).
-- No `end` is needed after `import` on this build (the structure-first
-  engine landed); a trailing `end` still works and is harmless.
-- Do **not** import `aql:math-util`, `aql:array-util`, `aql:bin-util`, or
-  `aql:struct-util` yourself — `bloom.aql` imports its own dependencies.
+  run from**, not relative to the importing file.
+- No `end` is needed after `import` on this build (a trailing `end` is
+  harmless).
+- Do **not** import `aql:math-util`, `aql:array-util`, `aql:matrix-util`,
+  or `aql:struct-util` for the library's sake — `stats.aql` imports its
+  own dependencies. **But** if *you* construct a `Matrix` to pass to the
+  dataset words, add `import "aql:matrix-util"` to **your** script: the
+  library's import does not re-export the `MatrixUtil` binding to callers.
 
 ## The one calling rule
 
@@ -32,7 +43,7 @@ AQL is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
 A call is written:
 
 ```
-receiver Bloom.verb arg1 arg2 end
+receiver Stats.verb arg1 arg2 end
 ```
 
 — the **receiver/data comes first**, then the verb, then any extra
@@ -41,121 +52,197 @@ parens). Without a terminator the verb can swallow whatever token
 follows it and you get wrong results or a dispatch error.
 
 ```aql
-def bf ({n: 1000, p: 0.01} Bloom.make end)
-def _ (bf Bloom.add "alice" end)
-(bf Bloom.contains "alice" end) print    # => true
+def xs [2 4 4 4 5 5 7 9]
+print ((xs Stats.mean   end)) end    # => 5.0
+print ((xs Stats.median end)) end    # => 4.5
 ```
 
-`(… )` parentheses count as a terminator, so `(bf Bloom.contains "x")` is
-fine too; use `end` for top-level statements that aren't already wrapped.
+`(… )` parentheses count as a terminator, so `(xs Stats.mean)` is fine
+too; use `end` for top-level statements that aren't already wrapped.
 
 ## API reference (exact call shapes)
 
+Every **descriptive** word accepts either a `List` of numbers or a
+`Summary`. The **order-statistic** words take a `List` only.
+
+### Accumulator — the streaming `Summary`
+
 | Call | Returns | Notes |
 |------|---------|-------|
-| `{n: Integer, p: Float} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. Derives `m`, `k`. Bad arguments raise `bad_input`. |
-| `bf Bloom.add item end` | the **same** `bf` (mutated) | Any value; stringified internally. Sets `k` bits, increments `added`. |
-| `bf Bloom.contains item end` | `Boolean` | `false` = **definitely never added**. `true` = *probably* added (may be a false positive). |
-| `bf Bloom.count end` | `Integer` | **Estimate** of distinct items, not an exact tally. Empty filter ⇒ `0`. |
-| `bf Bloom.params end` | `Map` | `{n, p, m, k}`. |
-| `a Bloom.merge b end` | the **same** `a` (mutated) | Union of `a` and `b` into `a`. Requires identical `m` and `k`; else raises `incompatible_merge`. |
-| `bf Bloom.encode end` | `String` | jsonic snapshot: params + set-bit indices. Round-trips through `Bloom.decode`. |
-| `text Bloom.decode end` | `BloomFilter` | Rebuild a filter from an `encode` snapshot. Malformed text raises `bad_payload`. |
+| `xs Stats.summary end` | `Summary` | Build from a List (`[]` ⇒ empty). |
+| `s Stats.push x end` | the **same** `s` (mutated) | Add one observation. |
+| `s Stats.push-all xs end` | the **same** `s` (mutated) | Add every element of a List. |
+| `a Stats.merge b end` | the **same** `a` (mutated) | Combine `b`'s moments into `a`. Always compatible. |
+| `s Stats.encode end` | `String` | jsonic snapshot of the moments. |
+| `text Stats.decode end` | `Summary` | Rebuild from a snapshot; bad text raises `bad_payload`. |
 
-Construct filters **only** through `Bloom.make`. Treat `BloomFilter`
-fields as read-only; mutate through the namespace words.
+### Descriptive (List **or** Summary)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `x Stats.count end` | `Integer` | Observation count; empty ⇒ `0`. |
+| `x Stats.sum end` | `Float` | Total. |
+| `x Stats.mean end` | `Float` | Needs ≥ 1 value. |
+| `x Stats.variance end` | `Float` | **Sample** (n-1). Needs ≥ 2 values. |
+| `x Stats.pvariance end` | `Float` | **Population** (n). |
+| `x Stats.stddev end` / `x Stats.pstddev end` | `Float` | Sample / population std dev. |
+| `x Stats.min end` / `x Stats.max end` / `x Stats.range end` | `Float` | Extremes and `max - min`. |
+| `x Stats.skewness end` | `Float` | Biased g1. |
+| `x Stats.kurtosis end` | `Float` | Biased **excess** g2. |
+
+### Order statistics (List only)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `xs Stats.median end` | `Float` | |
+| `xs Stats.quantile q end` | `Float` | `q` in `[0,1]`, linear interpolation (type-7). |
+| `xs Stats.iqr end` | `Float` | Q3 − Q1. |
+| `xs Stats.mode end` | `Float` | Most frequent; smallest value on a tie. |
+
+### Bivariate (two Lists)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `xs Stats.covariance ys end` | `Float` | **Sample**. |
+| `xs Stats.pcovariance ys end` | `Float` | **Population**. |
+| `xs Stats.correlation ys end` | `Float` | Pearson r in `[-1, 1]`. |
+| `xs Stats.linreg ys end` | `Map` | `{slope, intercept, r, r2}` — `xs` predictor, `ys` response. |
+
+### Distributions / scores
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `xs Stats.zscores end` | `List` | Sample-standardised values. |
+| `x Stats.normal-pdf {mu, sigma} end` | `Float` | `sigma > 0`. |
+| `x Stats.normal-cdf {mu, sigma} end` | `Float` | erf approximation (abs error ≈ 1.5e-7). |
+
+### Matrix / dataset (rows = observations, cols = variables)
+
+| Call | Returns | Notes |
+|------|---------|-------|
+| `mat Stats.col-means end` | `List` | Per-column means. |
+| `mat Stats.col-variances end` / `mat Stats.col-stddevs end` | `List` | Per-column **sample** variance / std dev. |
+| `mat Stats.cov-matrix end` | `Matrix` | **Sample** covariance matrix. Needs ≥ 2 rows. |
+| `mat Stats.cor-matrix end` | `Matrix` | Correlation matrix. |
+| `mat Stats.standardize end` | `Matrix` | Each column z-scored. |
+| `x Stats.ols ys end` | `List` | Least-squares coefficients (`x` = design Matrix). |
+
+Construct `Summary` values **only** through `Stats.summary`. Treat
+`Summary` fields as read-only; mutate through the namespace words.
+
+The unqualified `variance`/`stddev`/`covariance` are **sample**
+statistics (Bessel's n-1 correction); the `p`-prefixed ones are
+**population**.
 
 Errors carry a code and message: catch with `do […] error […]` and read
-`e get code` / `e get message` in the handler (dispatch on the code with
-`case` if you handle several).
+`e get code` / `e get message` in the handler. Codes: `bad_input`
+(empty/too-few data, a quantile out of `[0,1]`, a non-positive `sigma`,
+mismatched lengths), `needs_data` (an order-statistic word called on a
+`Summary`), `singular` (`Stats.ols` has no unique solution),
+`bad_payload` (bad `Stats.decode` text).
 
 ## Copy-paste idioms (all verified)
 
-Create, add, query:
+Descriptive statistics over a List:
 
 ```aql
-import "./bloom.aql"
-def seen ({n: 10000, p: 0.01} Bloom.make end)
-def _ (seen Bloom.add "ada" end)
-print ((seen Bloom.contains "ada"   end)) end   # => true
-print ((seen Bloom.contains "linus" end)) end   # => false
+import "./stats.aql"
+def xs [2 4 4 4 5 5 7 9]
+print ((xs Stats.mean     end)) end   # => 5.0
+print ((xs Stats.variance end)) end   # => 4.571428571428571 (sample)
+print ((xs Stats.median   end)) end   # => 4.5
+print ((xs Stats.quantile 0.9 end)) end   # => 7.6
 ```
 
-Add many in a loop (`each` body must yield a value — push a `0`):
+The streaming accumulator — build, push, query:
 
 ```aql
-def bf ({n: 1000, p: 0.01} Bloom.make end)
-def _ (iota 50 each [
-  var [[i] bf Bloom.add (convert String i) end 0 ]
-])
-print ((bf Bloom.count end)) end          # => ~50 (an estimate)
+def s ([1 2 3 4] Stats.summary end)
+def _ (s Stats.push-all [5 6 7 8] end)
+def _2 (s Stats.push 9 end)
+print ((s Stats.count end)) end       # => 9
+print ((s Stats.mean  end)) end       # => 5.0
 ```
 
-Merge two filters built with the **same `(n, p)`**:
+Merge is O(1) and gives the same answer as pooling the data — useful for
+parallel/streaming aggregation:
 
 ```aql
-def a ({n: 1000, p: 0.01} Bloom.make end)
-def b ({n: 1000, p: 0.01} Bloom.make end)
-def _a (a Bloom.add "from-a" end)
-def _b (b Bloom.add "from-b" end)
-def merged (a Bloom.merge b end)
-print ((merged Bloom.contains "from-a" end)) end   # => true
-print ((merged Bloom.contains "from-b" end)) end   # => true
+def a ([1 2 3 4] Stats.summary end)
+def b ([5 6 7 8] Stats.summary end)
+def merged (a Stats.merge b end)
+print ((merged Stats.mean     end)) end   # => 4.5
+print ((merged Stats.variance end)) end   # => 6.0
 ```
 
-Guard an incompatible merge (mismatched `(n, p)` raises
-`incompatible_merge`):
+Persist and reload a Summary through the snapshot string:
 
 ```aql
-def a ({n: 1000, p: 0.01} Bloom.make end)
-def b ({n:  500, p: 0.01} Bloom.make end)    # different n ⇒ different m
-def result (do [a Bloom.merge b end] error [
-  get message                                # or: get code, case […]
-])
-print (result) end
+def snap (merged Stats.encode end)
+def back (snap Stats.decode end)
+print ((back Stats.mean end)) end          # => 4.5
 ```
 
-In a test, assert the failure (or the specific code) instead:
+Bivariate and regression:
 
 ```aql
-import "aql:test"
-[a Bloom.merge b end] Assert.throws end
-def e (do [a Bloom.merge b end])
-incompatible_merge/q (e get code) Assert.equal end
+def x [1 2 3 4 5]
+def y [2 4 5 4 5]
+print ((x Stats.correlation y end)) end    # => 0.7745966692414834
+def lr (x Stats.linreg y end)
+print ((lr get slope)) end                 # => 0.6
+print ((lr get intercept)) end             # => 2.2
 ```
 
-Persist and reload through the snapshot string:
+Dataset statistics over a Matrix (import matrix-util yourself):
 
 ```aql
-def snap (bf Bloom.encode end)
-def back (snap Bloom.decode end)
-print ((back Bloom.contains "ada" end)) end        # => true
+import "aql:matrix-util"
+import "./stats.aql"
+def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
+print ((mat Stats.col-means end)) end      # => [4.0 7.5]
+def cov (mat Stats.cov-matrix end)         # => Matrix(2x2)
+```
+
+Multiple linear regression via OLS (prepend a 1s column for the
+intercept):
+
+```aql
+import "aql:matrix-util"
+import "./stats.aql"
+def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
+def coef (design Stats.ols [2 3 5 8] end)
+print (coef) end                           # => [-0.5 2.0]  (intercept, slope)
+```
+
+Guard a misuse (an order statistic on a Summary raises `needs_data`):
+
+```aql
+def s ([1 2 3] Stats.summary end)
+def code (do [s Stats.median end] error [ get code ])
+print (code) end                           # => needs_data
 ```
 
 ## Common mistakes
 
 | ✗ Don't write | ✓ Write | Why |
 |---------------|---------|-----|
-| `Bloom.contains(bf, "x")` | `bf Bloom.contains "x" end` | No `f(a,b)` syntax in AQL. |
-| `bf.contains("x")` | `bf Bloom.contains "x" end` | No method-call syntax. |
-| `bf Bloom.add "x"` (no terminator, mid-expression) | `bf Bloom.add "x" end` | The verb swallows the next token without `end`/parens. |
-| `def bf2 (bf Bloom.add "x" end)` then use `bf` as "before" | `add` mutates in place | `bf` and the returned value are the **same** object; there is no immutable copy. |
-| treat `contains ⇒ true` as certain | verify against source of truth | `true` is probabilistic (≈ rate `p`); only `false` is certain. |
-| `a Bloom.merge b end` with different `(n, p)` | build both with identical `(n, p)` | Mismatched `m`/`k` raises `incompatible_merge` (read `e get message` for which). |
-| `make BloomFilter {…}` | `{n, p} Bloom.make end` | Construct only via `Bloom.make` (the class has a required internal `bits` field). |
-| `(bf Bloom.count end)` for an exact count | read `bf.added` (or `added:` in `Bloom.encode`) | `count` is an estimate; `added` is the exact insert count. |
-| `import "aql:math-util"` in your script | nothing | `bloom.aql` imports its own deps. |
-
-A note on `print` while debugging: `print` collects a forward argument,
-so `(a) print (b) print` reverses and a bare trailing `print` may fail to
-find its value. Write `print (value) end` — one value per statement —
-and output appears in source order.
+| `Stats.mean(xs)` | `xs Stats.mean end` | No `f(a,b)` syntax in AQL. |
+| `xs.mean()` | `xs Stats.mean end` | No method-call syntax. |
+| `xs Stats.mean` (no terminator, mid-expression) | `xs Stats.mean end` | The verb swallows the next token without `end`/parens. |
+| `summary Stats.median end` | pass the raw **List** to `median` | Order statistics need the data; a `Summary` raises `needs_data`. |
+| treat `Stats.variance` as population variance | `Stats.pvariance` for population | Bare `variance`/`stddev` are **sample** (n-1). |
+| keep a pre-`push` copy of a Summary as "before" | `push`/`merge` mutate in place | The receiver and the returned value are the **same** object. |
+| `xs get i` with a variable `i` | `xs get (i)` | A bare word after `get` is read as an atom key; parenthesise variable indices. |
+| call the dataset words without `import "aql:matrix-util"` in your script | add the import yourself | The library's deps are not re-exported to callers. |
+| `make Summary {…}` | `xs Stats.summary end` | Construct only via `Stats.summary`. |
+| `"label" print (v) print` | `print (value) end`, one per statement | `print` collects a forward argument; chains print out of order. |
 
 ## Where to look next
 
-- `docs/reference.md` — full signatures, stack-in columns, complexity.
-- `api.json` — the same API as a machine-readable manifest (exact call
-  shapes, argument order, return types).
-- `docs/how-to.md` — task recipes (sizing, merge, persist, test).
-- `test/bloom_smoke_test.aql` — a complete, runnable worked example.
-- `dx-report.md` — known AQL-runtime gotchas observed with this build.
+- `docs/reference.md` — full signatures, semantics, complexity.
+- `api.json` — the same API as a machine-readable manifest.
+- `docs/how-to.md` — task recipes (summarise, merge, regress, persist).
+- `docs/tutorial.md` — a guided first session.
+- `test/stats_smoke_test.aql` — a complete, runnable worked example.
+- `dx-report.md` — AQL-runtime gotchas observed while building this module.

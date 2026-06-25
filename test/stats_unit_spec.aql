@@ -1,0 +1,145 @@
+# Example-based unit tests for stats — DECLARATIVE SPEC FORMAT.
+#
+# This file is the spec-format sibling of `test/stats_unit_test.aql`.
+# Where that file drives example checks imperatively (`Test.test` with
+# `Assert.equal`), this one expresses them as *data*: a list of
+# `TestSpec` values that `Test.run-spec` walks and dispatches.
+#
+# A TestSpec is `{name, subject, cases, subs}`:
+#   - `subject` is the exported word to exercise, named as a dotted
+#     String (e.g. "Stats.mean").
+#   - each case is `{name, in, out}`: the `in` list is spread onto the
+#     stack (receiver first, then forward args), the subject is
+#     dispatched, and the top-of-stack result is deep-compared (`deq`)
+#     against `out`.
+#
+# Only exact-valued statistics live here (means over evenly-divisible
+# data, population variance, the order statistics, exact covariance);
+# the irrational results (stddev, correlation, the normal distribution)
+# are tolerance-checked in the imperative sibling instead.
+#
+# Run:
+#   aql test/stats_unit_spec.aql
+
+
+import "aql:test" end
+import "./stats.aql" end
+
+
+def specs [
+
+  # mean over evenly-divisible data is exact.
+  {
+    name:    "mean"
+    subject: "Stats.mean"
+    cases: [
+      { name: "1-5"      in: [ [1 2 3 4 5] ]    out: 3.0 }
+      { name: "constant" in: [ [7 7 7 7] ]      out: 7.0 }
+    ]
+    subs: []
+  }
+
+  # population variance and the trivial aggregates are exact.
+  {
+    name:    "pvariance"
+    subject: "Stats.pvariance"
+    cases: [
+      { name: "1-5"      in: [ [1 2 3 4 5] ]  out: 2.0 }
+      { name: "constant" in: [ [4 4 4 4] ]    out: 0.0 }
+    ]
+    subs: []
+  }
+
+  {
+    name:    "sum"
+    subject: "Stats.sum"
+    cases: [ { name: "1-5" in: [ [1 2 3 4 5] ] out: 15.0 } ]
+    subs: []
+  }
+
+  {
+    name:    "count"
+    subject: "Stats.count"
+    cases: [
+      { name: "five"  in: [ [1 2 3 4 5] ] out: 5 }
+      { name: "empty" in: [ [] ]          out: 0 }
+    ]
+    subs: []
+  }
+
+  {
+    name:    "range"
+    subject: "Stats.range"
+    cases: [ { name: "1-5" in: [ [1 2 3 4 5] ] out: 4.0 } ]
+    subs: []
+  }
+
+  # order statistics.
+  {
+    name:    "median"
+    subject: "Stats.median"
+    cases: [
+      { name: "odd"  in: [ [1 2 3 4 5] ]        out: 3.0 }
+      { name: "even" in: [ [2 4 4 4 5 5 7 9] ]  out: 4.5 }
+    ]
+    subs: []
+  }
+
+  {
+    name:    "quantile"
+    subject: "Stats.quantile"
+    cases: [
+      { name: "q25" in: [ [2 4 4 4 5 5 7 9] 0.25 ] out: 4.0 }
+      { name: "q75" in: [ [2 4 4 4 5 5 7 9] 0.75 ] out: 5.5 }
+    ]
+    subs: []
+  }
+
+  {
+    name:    "iqr"
+    subject: "Stats.iqr"
+    cases: [ { name: "2-9" in: [ [2 4 4 4 5 5 7 9] ] out: 1.5 } ]
+    subs: []
+  }
+
+  {
+    name:    "mode"
+    subject: "Stats.mode"
+    cases: [ { name: "4-wins" in: [ [2 4 4 4 5 5 7 9] ] out: 4.0 } ]
+    subs: []
+  }
+
+  # exact bivariate covariance.
+  {
+    name:    "covariance"
+    subject: "Stats.covariance"
+    cases: [ { name: "sample" in: [ [1 2 3 4 5] [2 4 5 4 5] ] out: 1.5 } ]
+    subs: []
+  }
+
+  {
+    name:    "pcovariance"
+    subject: "Stats.pcovariance"
+    cases: [ { name: "population" in: [ [1 2 3 4 5] [2 4 5 4 5] ] out: 1.2 } ]
+    subs: []
+  }
+
+]
+
+
+# --- run every spec ------------------------------------------------
+
+def _ (specs each [
+  var [[s]
+    s Test.run-spec end
+    0
+  ]
+])
+
+
+# --- summary -------------------------------------------------------
+
+"---" print
+"fail count: " print Test.fail-count end print
+0 Test.fail-count end Assert.equal end
+"all green" print

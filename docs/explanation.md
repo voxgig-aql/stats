@@ -1,215 +1,216 @@
 # Explanation
 
-Understanding-oriented discussion of how this bloom filter works and
-why it is built the way it is. Read this when you want the *why*; for
-the *what*, see the [Reference](reference.md), and for *how to get a
+Understanding-oriented discussion of how this statistics library works
+and why it is built the way it is. Read this when you want the *why*;
+for the *what*, see the [Reference](reference.md), and for *how to get a
 job done*, the [How-to guides](how-to.md).
 
 ---
 
-## What a bloom filter is for
+## What the library is for
 
-A bloom filter answers one question — *"have I seen this item?"* — using
-far less memory than storing the items themselves. It trades exactness
-for size: it will never miss an item it has seen (no false negatives),
-but it will occasionally claim to have seen an item it hasn't (a false
-positive). You choose the false-positive rate up front, and the filter
-sizes itself to meet it.
+`Stats` covers the everyday statistics of a numeric dataset:
+**descriptive** summaries (centre, spread, shape), **order** statistics
+(median, quantiles, mode), **inferential/bivariate** measures
+(covariance, correlation, regression), simple **distribution** functions
+(the normal PDF/CDF and z-scores), and **matrix/dataset** operations
+over many variables at once (per-column statistics, covariance and
+correlation matrices, standardisation, and ordinary least squares).
 
-This is the right tool when:
+There are two ways in, and the design leans on both:
 
-- the set is large and you only need membership, not the items;
-- an occasional false positive is acceptable (you can re-check against
-  the real store on a hit);
-- you want cheap unions of independently-built sets (see
-  [Merging](#merging-filters)).
+- **Pure functions over a List** — `[1 2 3] Stats.mean end`. Convenient
+  for data you already hold in memory; each call walks the List.
+- **A streaming `Summary` accumulator** — `xs Stats.summary end`, then
+  `push`/`push-all`/`merge`. For data that arrives incrementally, that
+  is too large to keep, or that you want to aggregate in parallel.
 
-It is the wrong tool when you need to enumerate members, delete them,
-or get an exact answer.
-
----
-
-## How membership works
-
-The filter is a bit array of width `m`, all zero to start. Each item is
-run through `k` hash functions, each producing an index in `[0, m)`.
-`add` sets the bits at those `k` indices. `contains` checks whether
-*all* `k` bits for an item are set.
-
-```
-add "alice"      → bits {h1, h2, … hk} set to 1
-contains "alice" → are bits {h1, h2, … hk} all 1?  → yes
-contains "carol" → are bits {g1, g2, … gk} all 1?  → some 0 → no
-```
-
-### Why there are no false negatives
-
-`add` only ever turns bits *on*; nothing turns them off. So once an
-item's `k` bits are set, they stay set, and a later `contains` for that
-same item must find all of them set. A "definitely not present" answer
-(`false`) is therefore always trustworthy.
-
-### Why there are false positives
-
-Different items can hash to overlapping bits. If items you *did* add
-happen to collectively set all `k` bits that some *un-added* item maps
-to, `contains` returns `true` for that un-added item. The chance of this
-rises as the filter fills, which is exactly what the sizing math
-controls.
+This is the right tool for batch and streaming summaries of moderate-
+dimensional numeric data. It is not a linear-algebra package or a
+modelling framework: the matrix words cover the common dataset
+operations, but anything past OLS belongs elsewhere.
 
 ---
 
-## Sizing the filter
+## Why a streaming Summary
 
-`make` takes a target capacity `n` (how many distinct items you expect)
-and a target false-positive rate `p`, and derives the two structural
-parameters:
+A naive `mean` then `variance` then `skewness` over a List walks the
+data three times and, for variance, is tempting to compute as
+`Σx² - (Σx)²/n` — which loses precision catastrophically when the values
+are large and close together (you subtract two big nearly-equal sums).
 
-- **`m`, the bit width** — `m = ceil( -n · ln(p) / (ln 2)² )`. Smaller
-  `p` or larger `n` means more bits.
-- **`k`, the hash count** — `k = round( (m / n) · ln 2 )`, the value
-  that minimises the false-positive rate for the chosen `m` and `n`.
+The `Summary` avoids both problems. It holds the count, the running
+mean, and the **central-moment sums** `m2`, `m3`, `m4` (`Σ(x-mean)^k`),
+plus the running min/max, and updates them with the **Welford/Pébay**
+one-pass recurrences. Each new observation adjusts the moments using the
+old mean and the deviation of the new point, so:
 
-For `{n: 1000, p: 0.01}` this yields `m = 9586`, `k = 7`. The
-[Reference](reference.md#bloommake) lists more worked values. Because
-`k = round(log₂(1/p))`, a `p` above `0.5` rounds `k` to `0` and is
-meaningless — keep `p` in `(0, 0.5]`, and in practice well below it.
+- **One pass.** Every descriptive statistic (mean, variance, stddev,
+  skewness, kurtosis) is read straight off the stored moments — no
+  re-walking the data.
+- **Numerically stable.** Deviations are taken from the current mean
+  rather than squaring raw values, so there is no catastrophic
+  cancellation.
+- **O(1) mergeable.** Two Summaries combine with the parallel (Pébay)
+  combine formulas, which express the moments of the union purely in
+  terms of the two sub-summaries' counts, means, and moment sums — and
+  the delta between their means. No raw data is needed, so `merge` is
+  constant-time and **exact** (not an approximation). This is what makes
+  distributed aggregation cheap: each worker keeps a Summary, and a
+  coordinator merges them.
 
-The filter stores `n` and `p` alongside `m` and `k` so it can report
-its own configuration via `params` and so `merge` can check
-compatibility.
+Because a Summary stores only moments, it cannot answer the
+order-statistic words — there is no way to recover the sorted data from
+`{n, mean, m2, m3, m4, min, max}`. Those words therefore require a List
+and raise `needs_data` on a Summary. The same snapshot is exactly what
+`encode`/`decode` serialise, which is why a decoded Summary is also
+"order-statistic blind".
 
----
-
-## Hashing: double hashing from two FNV variants
-
-The module needs `k` independent-looking hash functions but computes
-only two real hashes. It derives index `i` as:
-
-```
-index_i = (h1 + i · h2) mod m        for i in 0 … k-1
-```
-
-`h1` and `h2` come from the native FNV-1a words in `aql:bin-util`:
-`h1` is `BinUtil.fnv32` of the stringified item, and `h2` is the high
-32 bits of `BinUtil.fnv64`, OR'd with 1 so the stride is odd and
-covers all residues mod `m`. This "double hashing" gives `k`
-well-spread indices at the cost of two hashes rather than `k`, a
-standard bloom-filter technique. (Earlier versions of this module
-hand-rolled FNV over a 95-character printable-ASCII lookup table
-because the runtime exposed no character-code or hash words; the
-native words handle any string and disperse better.) FNV is not a
-security-grade hash — the filter is for membership, not cryptography.
+All the moment arithmetic is done in Float on purpose: AQL Integer
+overflow is a *hard error*, not a silent wraparound, so sums of squares
+are floated up front to keep large datasets from blowing up.
 
 ---
 
-## Estimating cardinality
+## Sample vs population
 
-`count` estimates how many distinct items were added, using the
-Swamidass–Baldi estimator:
+Variance comes in two flavours that differ only in the divisor:
 
 ```
-n_est = -(m / k) · ln(1 - X/m)
+population variance = m2 / n          (Stats.pvariance / pstddev)
+sample variance     = m2 / (n - 1)    (Stats.variance  / stddev)
 ```
 
-where `X` is the number of set bits. The intuition: a fuller bit array
-implies more inserts, but with diminishing returns as collisions
-accumulate. The implementation guards the saturated case (`X = m`,
-where the logarithm would blow up) by returning the raw `added` counter
-instead.
+Dividing by `n` is correct when your data **is** the whole population.
+But when the data is a *sample* drawn from a larger population, dividing
+by `n` systematically **underestimates** the true variance, because the
+deviations are measured from the sample mean — which is itself pulled
+toward the data — rather than the unknown true mean. Dividing by `n - 1`
+(**Bessel's correction**) removes that bias. The sample form is the
+right default for inference, which is why the unqualified
+`variance`/`stddev`/`covariance` are the sample versions and the
+population versions carry the explicit `p` prefix.
 
-This is why `count` is an *estimate* and generally reads a little below
-the true insert count as the filter fills. If you need the exact
-number of `add` calls, read the `added` field instead (`bf.added`,
-also carried in the [`encode`](reference.md#bloomencode) snapshot).
-An empty filter estimates exactly `0`.
+The same logic governs `covariance` (sample, `n - 1`) vs `pcovariance`
+(population, `n`). `correlation`, being a ratio of covariance to the
+product of standard deviations, has the `n`/`n-1` factor cancel, so it
+needs no sample/population distinction.
 
 ---
 
-## Merging filters
+## Dataset words as matrix algebra
 
-Two filters built with the same `(n, p)` share the same `m` and `k`,
-which means their bit arrays are positionally comparable: bit `i` means
-the same thing in both. `merge` ORs the source's bits into the target,
-so the result contains every item either filter held. This is what
-makes bloom filters attractive for distributed counting — workers each
-build a filter, and a coordinator unions them with no re-hashing.
+The dataset words treat a Matrix as a data table: each **row** is one
+observation, each **column** one variable. That layout lets the
+per-variable statistics fall out of matrix algebra.
 
-`merge` insists on matching `m` and `k` because OR-ing arrays of
-different widths, or built with different hash counts, would be
-meaningless. The check is a guard against silently-wrong results.
+Center each column by subtracting its mean, giving the centered matrix
+`Xc`. Then the **sample covariance matrix** is
+
+```
+Cov = (1 / (n - 1)) · Xcᵀ Xc
+```
+
+— the `(i, j)` entry is `Σ(x_i - mean_i)(x_j - mean_j) / (n - 1)`,
+exactly the sample covariance of columns `i` and `j`, with the diagonal
+holding the per-column variances. `cov-matrix` computes precisely this
+(it builds `Xc`, forms the Gram matrix `Xcᵀ Xc` via the matrix-util
+multiply, and scales by `1/(n-1)`). `cor-matrix` then divides each entry
+by the product of the two columns' standard deviations (the square roots
+of the diagonal), normalising covariances to correlations in `[-1, 1]`.
+`standardize` z-scores each column independently.
 
 ---
 
-## Design choices specific to this library
+## How OLS works
 
-### Packed bit storage
+`Stats.ols` fits the least-squares coefficients `b` that minimise
+`‖y - Xb‖²` for a design matrix `X` (rows = observations, columns =
+predictors) and response `y`. The minimiser satisfies the **normal
+equations**:
 
-Bits are packed into an `Array` of integer words, 63 bits per word
-(bit 63 is the sign bit; staying out of it keeps every word a plain
-non-negative Integer). The Array is fixed-extent and mutated in place
-through `set`, and the word-level operations come from `aql:bin-util`:
-`BinUtil.set`/`BinUtil.test` for single bits, `BinUtil.popcount` for
-`count`, and `BinUtil.bor` for `merge` — so the formerly per-bit
-`O(m)` walks now touch one word per 63 bits. Memory is `O(m/63)`
-regardless of load.
+```
+(Xᵀ X) b = Xᵀ y
+```
 
-Earlier versions used a sparse map keyed by stringified bit index,
-because the runtime then had no mutable indexed container and no
-bitwise words outside core. With `Array` and the `bin-util` second
-tier, the packed layout is both the simpler and the faster choice.
+So OLS forms the small `k × k` matrix `XᵀX` and the length-`k` vector
+`Xᵀy` (where `k` is the number of predictors), then solves that square
+system for `b`. There is no intercept term unless you ask for one:
+**prepend a column of 1s to `X`** and the corresponding coefficient is
+the intercept.
 
-One subtlety: the `bits` field is declared by *type* (`bits: Array`)
-rather than given a schema default, and every constructor passes a
-fresh Array. A class-field default is evaluated once, at class
-definition, and that single value would be shared by every instance —
-a mutable default would silently alias all filters together (see
-`dx-report.md` §2).
+The solve is **Gaussian elimination with partial pivoting**, written
+directly in `stats.aql`. This is deliberate: `aql:matrix-util` offers a
+matrix multiply and transpose but **no matrix inverse**, so the library
+cannot lean on `b = (XᵀX)⁻¹ Xᵀy`. Solving the system by elimination is
+both more direct and numerically better than forming an explicit
+inverse anyway. The elimination copies the rows into mutable Arrays,
+pivots on the largest-magnitude entry in each column for stability, and
+back-substitutes. If a pivot is effectively zero — meaning the predictors
+are linearly dependent (a duplicated or constant column, or fewer
+independent observations than predictors) — the system has no unique
+solution and the word raises `singular` rather than returning garbage.
 
-### Mutation in place
+---
 
-`add` and `merge` mutate the filter instance in place (and also return
-it). This is deliberate: a filter is a large accumulator, and copying it
-on every insert would be wasteful. Callers that want an independent copy
-should round-trip through `encode`/`decode` or build a fresh filter.
+## The normal CDF and its erf approximation
 
-### Raising errors
+`normal-pdf` is a closed form, but the normal **CDF** has no elementary
+antiderivative — it is `0.5 · (1 + erf(z / √2))`, and `erf` itself must
+be approximated. The library uses the **Abramowitz & Stegun 7.1.26**
+rational-polynomial approximation of `erf`, which has a maximum absolute
+error of about **1.5 × 10⁻⁷**. That is far tighter than typical input
+precision and costs only a handful of multiplies, so `normal-cdf` stays
+a cheap, allocation-free call. The approximation is symmetric (it
+mirrors around zero via the sign of the argument), so both tails are
+handled by the same polynomial. If you need more than ~7 digits of CDF
+accuracy, this is the wrong tool; for the usual probability and
+hypothesis-test work it is comfortably exact.
 
-Failures raise coded errors with `raise`: `bad_input` from `make`,
-`incompatible_merge` from `merge`, `bad_payload` from `decode`.
-Handlers catch them with `do […] error […]` and read `code`/`message`
-(plus any payload fields) off the Error value.
+---
 
-Two defensive idioms in `bloom.aql` date from runtime sharp edges that
-have since been fixed upstream (both documented with repros in
-[`dx-report.md`](../dx-report.md)): the raise *message* is bound with
-`def` first (older builds' `raise` did not collect a template-string
-literal), and every guard `if` carries an explicit empty else `[]`
-(older builds eagerly forward-collected a `def` statement following an
-else-less `if`, which could pre-empt the guard). Both spellings remain
-correct on every build, so they are kept.
+## The List-or-Summary polymorphism
 
-Historical note: on aql `db828ec` there was no way to raise a custom
-error at all, and this module signalled merge mismatches by
-dispatching a descriptively-named undefined word
-(`bloom-merge-requires-equal-m`). The `raise` word landed after that
-build and the workaround is retired.
+Every descriptive word accepts **either** a List **or** a Summary. This
+is not two code paths bolted together: internally each word coerces its
+argument to a Summary (a List is folded into a fresh one; a Summary is
+used as-is) and then reads the answer off the moments. So
+`[1 2 3] Stats.mean end` and `([1 2 3] Stats.summary end) Stats.mean end`
+run the *same* computation — the List form just builds a throwaway
+Summary first.
 
-### `if` is always written all-forward
+This keeps the surface small and consistent: you learn one set of
+descriptive verbs and use them whether your data is a literal List or a
+long-lived accumulator. The boundary is the order-statistic and
+bivariate words, which genuinely need the raw values (you cannot sort or
+pair moments), and so are List-only and reject a Summary with
+`needs_data` — a deliberate, explicit failure rather than a silently
+wrong answer.
 
-Throughout `bloom.aql`, `if` is written `if cond [then] [else]` with
-every argument forward of the word. Both the all-forward and the
-all-stack forms select the correct branch; only the *mixed* form, with
-`if` between the condition and its branches (`cond if […] […]`),
-silently takes the else branch. Keeping `if` and its operands on the
-same side sidesteps that trap — and as noted above, an `if` used as a
-statement always gets an explicit else, even an empty one. This is
-otherwise invisible to callers.
+---
+
+## Raising errors
+
+Failures raise coded errors with `raise`: `bad_input` for empty or
+too-small data, an out-of-range quantile, a non-positive sigma, or
+mismatched vector lengths; `needs_data` when an order-statistic or
+bivariate word is handed a Summary; `singular` when the OLS normal
+equations have no unique solution; `bad_payload` when `decode` is given
+text that is not an `encode` snapshot. Handlers catch them with
+`do […] error […]` and read `code`/`message` (plus any payload fields)
+off the Error value. Coded errors let callers branch on *what* went
+wrong (with `case` on the code) rather than scraping a message string.
+
+Two defensive spellings in `stats.aql` are worth noting if you read the
+source: a raise *message* is bound with `def` before the `raise`, and
+guard `if`s used as statements carry an explicit empty else `[]`. Both
+sidestep runtime sharp edges documented in
+[`dx-report.md`](../dx-report.md) and are correct on every build.
 
 ---
 
 ## Further reading
 
-- [Tutorial](tutorial.md) — build your first filter step by step.
+- [Tutorial](tutorial.md) — summarise your first dataset step by step.
 - [How-to guides](how-to.md) — task-focused recipes.
 - [Reference](reference.md) — the exact API.

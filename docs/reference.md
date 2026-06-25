@@ -1,254 +1,294 @@
 # Reference
 
-Technical description of the `bloom-filter` module's public surface.
-This page is information-oriented: it states what each word is, its
-stack signature, and what it returns. For *why* the filter behaves the
-way it does, see [Explanation](explanation.md); for goal-directed
-recipes, see the [How-to guides](how-to.md).
+Technical description of the `Stats` module's public surface. This page
+is information-oriented: it states what each word is, its call shape,
+arguments, and what it returns. For *why* the library behaves the way it
+does, see [Explanation](explanation.md); for goal-directed recipes, see
+the [How-to guides](how-to.md).
 
 > **AI agents:** [AGENTS.md](../AGENTS.md) condenses the calling
-> convention, idioms, and common mistakes for machine use.
+> convention, idioms, and common mistakes for machine use; `api.json` is
+> the same API as a machine-readable manifest.
 
-The module exports a single namespace, `Bloom`, plus the `BloomFilter`
-type. Import it with:
+The module exports a single namespace, `Stats`, plus the `Summary` type.
+Import it with:
 
 ```aql
-import "./bloom.aql"
+import "./stats.aql"
 ```
 
 (No `end` is required after `import` on the pinned build; a trailing
 `end` is harmless.) A consuming script does **not** need to import
-`aql:math-util`, `aql:array-util`, `aql:bin-util`, or `aql:struct-util`
-itself — `bloom.aql` imports them internally.
+`aql:math-util`, `aql:array-util`, `aql:matrix-util`, or
+`aql:struct-util` itself — `stats.aql` imports them internally. The one
+exception: scripts that build a `Matrix` to pass to the dataset words
+must `import "aql:matrix-util"` themselves, because that binding is not
+re-exported.
 
 ---
 
 ## Calling convention
 
-Every operation is a forward-dispatched word and must be terminated
-with `end` (or wrapped in parentheses) at the call site, e.g.
-`bf Bloom.add "x" end` or `(bf Bloom.add "x")`. Without a terminator
+Every operation is a forward-dispatched word: the **data/receiver comes
+first**, then the verb, then any extra arguments, and the call is
+**terminated with `end`** (or wrapped in parentheses), e.g.
+`xs Stats.mean end` or `(xs Stats.quantile 0.9)`. Without a terminator
 the word collects the following token as an argument. This is general
-AQL forward-precedence behaviour, not specific to this module.
+AQL forward-precedence behaviour, not specific to this module. There is
+no `f(x)` or `x.f()` syntax.
 
-Argument order follows the AQL rule "first signature parameter is the
-top of the stack". The call-site columns below show the natural
-left-to-right order to write.
+Inputs may be Integer or Float; all arithmetic is done in Float, so
+results are Float (`count` returns Integer). When indexing a List with a
+variable, parenthesise the index: `xs get (i)`.
+
+---
+
+## Input polymorphism
+
+The **descriptive** words (`count`, `sum`, `mean`, `variance`,
+`pvariance`, `stddev`, `pstddev`, `min`, `max`, `range`, `skewness`,
+`kurtosis`) accept **either a List of numbers or a `Summary`**. The
+**order-statistic** words (`median`, `quantile`, `iqr`, `mode`) and the
+**bivariate** words need the raw data and take a **List only** — calling
+one on a Summary raises `needs_data`.
+
+## Sample vs population
+
+The unqualified `variance`/`stddev`/`covariance` are **sample**
+statistics (divide by `n - 1`). The `p`-prefixed `pvariance`/`pstddev`/
+`pcovariance` are **population** statistics (divide by `n`). The
+per-column matrix words and `cov-matrix` are sample statistics.
 
 ---
 
 ## Types
 
-### `BloomFilter`
+### `Summary`
 
-A sealed `class` instance — the filter. Fields:
+A sealed `class` instance — a streaming accumulator of running central
+moments (Welford / Pébay). Fields:
 
-| Field   | Type     | Meaning                                            |
-|---------|----------|----------------------------------------------------|
-| `n`     | Integer  | Target capacity (expected number of distinct items)|
-| `p`     | Float    | Target false-positive probability                  |
-| `m`     | Integer  | Derived bit-array width                             |
-| `k`     | Integer  | Derived number of hash functions                   |
-| `added` | Integer  | Count of `add` calls made against this filter      |
-| `bits`  | Array    | Packed bit storage — 63 bits per integer word      |
+| Field  | Type    | Meaning                                          |
+|--------|---------|--------------------------------------------------|
+| `n`    | Integer | Number of observations seen                      |
+| `mean` | Float   | Running mean                                     |
+| `m2`   | Float   | Central-moment sum Σ(x-mean)²                    |
+| `m3`   | Float   | Central-moment sum Σ(x-mean)³                    |
+| `m4`   | Float   | Central-moment sum Σ(x-mean)⁴                    |
+| `min`  | Float   | Smallest observation                             |
+| `max`  | Float   | Largest observation                              |
 
-Instances are created only through `Bloom.make`. Treat the fields as
-read-only; mutate exclusively through the namespace words. (The class
-is sealed and strictly typed, so writing an unknown field or a
-mis-typed value is a loud error.)
-
-`bits` is internal: an `Array` of `ceil(m / 63)` integer words, bit
-`i` living at bit `i mod 63` of word `i div 63`. Bit 63 (the sign
-bit) is never used, so every word stays a plain non-negative Integer.
+Instances are created **only** through `Stats.summary` (or rebuilt by
+`Stats.decode`). Treat the fields as read-only; update exclusively
+through the namespace words. Variance, skewness, and kurtosis are
+derived from `m2`/`m3`/`m4` on demand. An empty Summary has `n = 0`;
+`min`/`max` are seeded by the first observation.
 
 ---
 
-## Words
+## Accumulator words
 
-### `Bloom.make`
+### `Stats.summary`
 
-Construct a filter sized for a target capacity and false-positive rate.
+Build a streaming accumulator from a List of numbers.
 
 | | |
 |--|--|
-| **Call**    | `{n: Integer, p: Float} Bloom.make end` |
-| **Stack in**| an options Map with keys `n` and `p` |
-| **Returns** | `BloomFilter` |
-| **Errors**  | raises `bad_input` when `n` is not an Integer ≥ 1 or `p` is not a Float in `(0, 0.5]` |
+| **Call**    | `xs Stats.summary end` |
+| **Args**    | `xs: List` |
+| **Returns** | `Summary` (`[]` gives an empty Summary) |
 
-`m` and `k` are derived from `n` and `p` (see
-[Explanation §Sizing](explanation.md#sizing-the-filter)). The bounds
-are enforced: a `p` above `0.5` would round `k` toward `0`, so it is
-rejected rather than accepted uselessly.
+### `Stats.push`
+
+Add one observation. Welford update; **mutates** the Summary and returns
+the same object.
+
+| | |
+|--|--|
+| **Call**    | `s Stats.push x end` |
+| **Args**    | `s: Summary`, `x: Number` |
+| **Returns** | the same `Summary`, mutated |
+
+### `Stats.push-all`
+
+Add every element of a List.
+
+| | |
+|--|--|
+| **Call**    | `s Stats.push-all xs end` |
+| **Args**    | `s: Summary`, `xs: List` |
+| **Returns** | the same `Summary`, mutated |
+
+### `Stats.merge`
+
+Combine the moments of `b` into `a` (parallel/Pébay combine).
+
+| | |
+|--|--|
+| **Call**    | `a Stats.merge b end` |
+| **Args**    | `a: Summary`, `b: Summary` |
+| **Returns** | `a`, mutated to hold both |
+| **Effect**  | `a` is mutated; `b` is unchanged. Always compatible (no parameters to disagree on). O(1). |
 
 ```aql
-def bf ({n: 1000, p: 0.01} Bloom.make end)
-print ((bf Bloom.params end)) end
-# => {k:7 m:9586 n:1000 p:0.01}
+def a ([1 2 3 4] Stats.summary end)
+def b ([5 6 7 8] Stats.summary end)
+def _m (a Stats.merge b end)
+print ((a Stats.mean end)) end   # => 4.5
 ```
 
-### `Bloom.add`
+### `Stats.encode`
 
-Insert an item. Any value is accepted; it is stringified internally
-before hashing.
-
-| | |
-|--|--|
-| **Call**    | `bf Bloom.add item end` |
-| **Stack in**| `BloomFilter`, then the item (`Any`) |
-| **Returns** | the same `BloomFilter`, mutated in place |
-| **Effect**  | sets `k` bits; increments `added` by 1 |
-
-`add` mutates the filter it is given and also returns it, so the
-return value and the argument are the same object. Adding the same
-item twice sets no new bits but still increments `added`.
-
-### `Bloom.contains`
-
-Test membership.
+Snapshot a Summary's moments as a jsonic String.
 
 | | |
 |--|--|
-| **Call**    | `bf Bloom.contains item end` |
-| **Stack in**| `BloomFilter`, then the item (`Any`) |
-| **Returns** | `Boolean` |
-
-`false` means the item was **definitely never added**. `true` means
-the item was **probably added** — it may be a false positive at
-approximately rate `p`. There are no false negatives. See
-[Explanation §No false negatives](explanation.md#why-there-are-no-false-negatives).
+| **Call**    | `s Stats.encode end` |
+| **Args**    | `s: Summary` |
+| **Returns** | `String` (`{n, mean, m2, m3, m4, min, max}`) |
 
 ```aql
-def _ (bf Bloom.add "alice" end)
-print ((bf Bloom.contains "alice" end)) end   # => true
-print ((bf Bloom.contains "carol" end)) end   # => false
+print (([1 2 3 4 5] Stats.summary end) Stats.encode end) end
+# => {m2:10.0 m3:0.0 m4:34.0 max:5.0 mean:3.0 min:1.0 n:5}
 ```
 
-### `Bloom.count`
+Round-trips through `Stats.decode`.
 
-Estimate the number of distinct items added.
+### `Stats.decode`
 
-| | |
-|--|--|
-| **Call**    | `bf Bloom.count end` |
-| **Stack in**| `BloomFilter` |
-| **Returns** | `Integer` (estimate) |
-
-Uses the Swamidass–Baldi estimator over the set-bit population, with a
-guard that returns the exact `added` count when every bit is set. The
-result is an **approximation** and typically drifts below the true
-insert count as the filter fills. An empty filter counts `0`. Cost is
-one native popcount per 63-bit word — `O(m/63)`.
-
-### `Bloom.params`
-
-Return the filter's parameters as a Map.
+Rebuild a Summary from an `encode` snapshot.
 
 | | |
 |--|--|
-| **Call**    | `bf Bloom.params end` |
-| **Stack in**| `BloomFilter` |
-| **Returns** | `Map` with keys `n`, `p`, `m`, `k` |
+| **Call**    | `text Stats.decode end` |
+| **Args**    | `text: String` |
+| **Returns** | `Summary` |
+| **Errors**  | `bad_payload` when the text is unparseable or missing a field |
+
+Whole-valued Floats render without a decimal point, so `decode` coerces
+each field's type back (Integer `n`, Float moments).
+
+---
+
+## Descriptive words (List | Summary)
+
+| Word | Call | Returns | Semantics / errors |
+|------|------|---------|--------------------|
+| `count`     | `x Stats.count end`     | Integer | Number of observations; empty ⇒ `0`. |
+| `sum`       | `x Stats.sum end`       | Float   | Total of the observations. |
+| `mean`      | `x Stats.mean end`      | Float   | Arithmetic mean. Needs ≥ 1 value (else `bad_input`). |
+| `variance`  | `x Stats.variance end`  | Float   | **Sample** variance, `m2/(n-1)`. Needs ≥ 2 values. |
+| `pvariance` | `x Stats.pvariance end` | Float   | **Population** variance, `m2/n`. Needs ≥ 1 value. |
+| `stddev`    | `x Stats.stddev end`    | Float   | **Sample** standard deviation (√variance). |
+| `pstddev`   | `x Stats.pstddev end`   | Float   | **Population** standard deviation. |
+| `min`       | `x Stats.min end`       | Float   | Minimum observation. |
+| `max`       | `x Stats.max end`       | Float   | Maximum observation. |
+| `range`     | `x Stats.range end`     | Float   | `max - min`. |
+| `skewness`  | `x Stats.skewness end`  | Float   | Biased sample skewness g1 `= (m3/n)/(m2/n)^1.5`. `bad_input` on zero-variance data. |
+| `kurtosis`  | `x Stats.kurtosis end`  | Float   | Biased excess kurtosis g2 `= (m4/n)/(m2/n)^2 - 3`. `bad_input` on zero-variance data. |
+
+`x` is a `List` or a `Summary`.
 
 ```aql
-def ps (bf Bloom.params end)
-print ((ps "m" get)) end   # => 9586
+def s ([2 4 4 4 5 5 7 9] Stats.summary end)
+print ((s Stats.skewness end)) end   # => 0.6562500000000001
+print ((s Stats.kurtosis end)) end   # => -0.21875
+print ((s Stats.variance end)) end   # => 4.571428571428571
 ```
 
-### `Bloom.merge`
+---
 
-Union two filters into the first.
+## Order statistics (List only)
 
-| | |
-|--|--|
-| **Call**    | `a Bloom.merge b end` |
-| **Stack in**| target `BloomFilter` `a`, then source `BloomFilter` `b` |
-| **Returns** | `a`, now containing every bit that was set in `a` or `b` |
-| **Effect**  | mutates `a` in place; `b` is unchanged; `a.added` becomes `a.added + b.added` |
-| **Errors**  | raises `incompatible_merge` if `a` and `b` differ on `m` or `k` |
+A Summary discards the raw data, so these require a `List`; a Summary
+raises `needs_data`.
 
-Both filters must have identical `m` and `k`, which happens
-automatically when both were built with the same `(n, p)`. After a
-merge, every item present in `a` or `b` reads as contained. The union
-itself is one bitwise OR per 63-bit word.
-
-The error message names the mismatched parameter and both values, e.g.
-`Bloom.merge: filters disagree on m (9586 vs 4793); build both with
-the same (n, p)`. Trap it with `do […] error […]` (read `e get code` /
-`e get message`) or assert it with `Assert.throws`.
-
-### `Bloom.encode`
-
-Serialize the filter to a jsonic-style string snapshot.
-
-| | |
-|--|--|
-| **Call**    | `bf Bloom.encode end` |
-| **Stack in**| `BloomFilter` |
-| **Returns** | `String` |
-
-The string carries `n`, `p`, `m`, `k`, `added`, and the sorted list of
-set bit indices. Cost is `O(m)`.
+| Word | Call | Returns | Semantics / errors |
+|------|------|---------|--------------------|
+| `median`   | `xs Stats.median end`     | Float | The 0.5 quantile. |
+| `quantile` | `xs Stats.quantile q end` | Float | `q` in `[0,1]`, linear interpolation (NumPy/R type-7). `q` out of range ⇒ `bad_input`. |
+| `iqr`      | `xs Stats.iqr end`        | Float | Inter-quartile range, Q3 − Q1. |
+| `mode`     | `xs Stats.mode end`       | Float | Most frequent value; smallest such value on a tie. |
 
 ```aql
-print ((bf Bloom.encode end)) end
-# => {added:1 k:7 m:9586 n:1000 p:0.01 set:[223 1110 2827 3714 4601 6318 7205]}
+print (([1 2 3 4 5] Stats.quantile 0.25 end)) end   # => 2.0
 ```
 
-The snapshot round-trips through `Bloom.decode`. (Exact bit indices
-depend on the module's hash functions, so snapshots are portable
-across processes running the *same* module version, not across
-versions that changed the hashing.)
+---
 
-### `Bloom.decode`
+## Bivariate words (two Lists)
 
-Rebuild a filter from a `Bloom.encode` snapshot.
+Two equal-length Lists; mismatched lengths raise `bad_input`.
 
-| | |
-|--|--|
-| **Call**    | `text Bloom.decode end` |
-| **Stack in**| the snapshot `String` |
-| **Returns** | a fresh `BloomFilter` |
-| **Errors**  | raises `bad_payload` when the text is not parseable jsonic or lacks the required fields |
-
-The payload's own `m` and `k` are trusted (not re-derived from `n` and
-`p`), so a snapshot survives changes to the sizing formulas. The
-rebuilt filter is independent of the original — mutating one does not
-affect the other.
+| Word | Call | Returns | Semantics / errors |
+|------|------|---------|--------------------|
+| `covariance`  | `xs Stats.covariance ys end`  | Float | **Sample** covariance. Needs ≥ 2 paired values. |
+| `pcovariance` | `xs Stats.pcovariance ys end` | Float | **Population** covariance. |
+| `correlation` | `xs Stats.correlation ys end` | Float | Pearson `r` in `[-1, 1]`. `bad_input` if a variable has zero variance. |
+| `linreg`      | `xs Stats.linreg ys end`      | Map   | Simple regression of `ys` on `xs`: `{slope, intercept, r, r2}`. Predictor must have non-zero variance. |
 
 ```aql
-def snap (bf Bloom.encode end)
-def back (snap Bloom.decode end)
-print ((back Bloom.contains "alice" end)) end   # => true
+def fit ([1 2 3 4 5] Stats.linreg [2 4 5 4 5] end)
+print ((fit get slope)) end       # => 0.6
+print ((fit get intercept)) end   # => 2.2
+```
+
+---
+
+## Distribution / score words
+
+| Word | Call | Returns | Semantics / errors |
+|------|------|---------|--------------------|
+| `zscores`    | `xs Stats.zscores end`               | List  | Sample-standardised `(x - mean)/stddev`. Zero stddev ⇒ `bad_input`. List only. |
+| `normal-pdf` | `x Stats.normal-pdf {mu, sigma} end` | Float | Normal probability density at `x`. `sigma > 0` (else `bad_input`). |
+| `normal-cdf` | `x Stats.normal-cdf {mu, sigma} end` | Float | Normal cumulative probability at `x`, via an Abramowitz–Stegun erf approximation (abs error ≈ 1.5e-7). `sigma > 0`. |
+
+```aql
+print ((0 Stats.normal-cdf {mu: 0.0, sigma: 1.0} end)) end   # => 0.5000000005
+print (([1 2 3] Stats.zscores end)) end                      # => [-1.0, 0.0, 1.0]
+```
+
+---
+
+## Matrix / dataset words
+
+These take a `MatrixUtil` Matrix whose **rows are observations** and
+**columns are variables**. The per-column words return a `List`;
+`cov-matrix`/`cor-matrix`/`standardize` return a `Matrix`.
+
+| Word | Call | Returns | Semantics / errors |
+|------|------|---------|--------------------|
+| `col-means`     | `mat Stats.col-means end`     | List   | Per-column means. |
+| `col-variances` | `mat Stats.col-variances end` | List   | Per-column **sample** variances. |
+| `col-stddevs`   | `mat Stats.col-stddevs end`   | List   | Per-column **sample** standard deviations. |
+| `cov-matrix`    | `mat Stats.cov-matrix end`    | Matrix | **Sample** covariance matrix `(1/(n-1)) Xcᵀ Xc`. Needs ≥ 2 rows. |
+| `cor-matrix`    | `mat Stats.cor-matrix end`    | Matrix | Correlation matrix derived from `cov-matrix`. |
+| `standardize`   | `mat Stats.standardize end`   | Matrix | Each column z-scored (sample mean/stddev). |
+| `ols`           | `x Stats.ols ys end`          | List   | Least-squares coefficients via `XᵀX b = Xᵀy`. Rows of `X` must match length of `ys` (else `bad_input`); a rank-deficient system raises `singular`. Prepend a 1s column for an intercept. |
+
+```aql
+import "aql:matrix-util"
+import "./stats.aql"
+def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
+print ((mat Stats.col-means end)) end                  # => [4.0, 7.5]
+def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
+print ((design Stats.ols [2 3 5 8] end)) end            # => [-0.5, 2.0]
 ```
 
 ---
 
 ## Errors at a glance
 
-All failures raise coded errors; catch with `do […] error […]` and
-read `e get code` / `e get message` (dispatch on several codes with
-`case`).
+All failures raise coded errors; catch with `do […] error […]` and read
+`e get code` / `e get message` (dispatch on several codes with `case`).
 
-| Code | Raised by | Situation |
-|------|-----------|-----------|
-| `bad_input` | `make` | `n` not an Integer ≥ 1, or `p` not a Float in `(0, 0.5]` |
-| `incompatible_merge` | `merge` | the filters disagree on `m` or `k` |
-| `bad_payload` | `decode` | text is not parseable jsonic, or is missing/mis-typing `n p m k added set` |
+| Code | Situation |
+|------|-----------|
+| `bad_input` | empty data, too few points for the statistic, a `quantile` `q` outside `[0,1]`, a non-positive sigma, mismatched vector lengths, or a zero-variance predictor |
+| `needs_data` | an order-statistic / bivariate word called on a Summary |
+| `singular` | `Stats.ols` normal equations have no unique solution |
+| `bad_payload` | `Stats.decode` text is not a `Stats.encode` snapshot |
 
-A missing `end` after a `Bloom.*` call is not a module error but a
+A missing `end` after a `Stats.*` call is not a module error but a
 general AQL dispatch problem — the word collects the following token
 (add `end` or parens).
-
-## Complexity
-
-| Word       | Cost      |
-|------------|-----------|
-| `make`     | `O(m/63)` (allocates the word Array) |
-| `add`      | `O(k)`    |
-| `contains` | `O(k)`    |
-| `count`    | `O(m/63)` |
-| `params`   | `O(1)`    |
-| `merge`    | `O(m/63)` |
-| `encode`   | `O(m)`    |
-| `decode`   | `O(m/63 + s)` for `s` set bits |

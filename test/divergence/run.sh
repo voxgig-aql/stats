@@ -25,12 +25,12 @@ set -uo pipefail
 
 # aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new) —
 # the same commit the library now pins. It fixes the two regressions this
-# library's aql-backend-report.md flagged — the None/type-literal
-# template-interpolation break (f247557) and the `convert` return-type /
-# fold-carrier `no_signature` check false positives (f247557 / fc47452) — plus
-# OpInterp (1b7b9ae) and gradual-Any. All five suites interpret, check (0
-# errors), and compile clean. Bump in lockstep with the workflow AQL_REF.
-AQL_BYTECODE_REF=407fedad2ea2b30c3dde2f29cfbe60e55f94db4e
+# library's reports flagged. This is the same commit the library now pins
+# (see ci/test.yml AQL_REF) — `aql:matrix-util` and the gradual-Any /
+# union-narrowing behaviour this stats module relies on are present, and
+# all five suites interpret, check (0 errors), and compile identically to
+# the interpreter on it. Bump in lockstep with the workflow AQL_REF.
+AQL_BYTECODE_REF=12a44e0c6ca3f49cd35a871b573fd96bc13d7fd6
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -38,11 +38,11 @@ CACHE="$HOME/.cache/aql-divergence"
 AQL="$CACHE/aql-$AQL_BYTECODE_REF"
 
 SUITES="
-test/bloom_unit_test.aql
-test/bloom_unit_spec.aql
-test/bloom_prop_test.aql
-test/bloom_prop_spec.aql
-test/bloom_smoke_test.aql
+test/stats_unit_test.aql
+test/stats_unit_spec.aql
+test/stats_prop_test.aql
+test/stats_prop_spec.aql
+test/stats_smoke_test.aql
 "
 
 log() { echo "[divergence] $*"; }
