@@ -2,7 +2,7 @@
 
 Guidance for an AI coding agent calling this statistics library from an
 AQL project. Every code block below is verified to run against
-`aql-lang/aql` @ `c5fbb04` (main, which ships `aql:matrix-util`). If you
+`aql-lang/aql` @ `2342477` (main, which ships `aql:matrix-util`). If you
 read nothing else, read [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 

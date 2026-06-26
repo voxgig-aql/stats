@@ -26,11 +26,11 @@ links into the [Explanation](explanation.md); for exact signatures, the
 The module is written in AQL, which has no tagged release yet, so build
 the interpreter from source (the documented `go install …/aql@latest`
 fails on the repo's replace directives). The pinned commit is
-`c5fbb041b65ceab442b1df16e84a88b9365d71d8` (main):
+`234247709f7d971575da41a9b833f6b3e7fd8052` (main):
 
 ```bash
-curl -fsSL https://codeload.github.com/aql-lang/aql/tar.gz/c5fbb041b65ceab442b1df16e84a88b9365d71d8 | tar -xz
-cd aql-c5fbb041b65ceab442b1df16e84a88b9365d71d8/cmd/go
+curl -fsSL https://codeload.github.com/aql-lang/aql/tar.gz/234247709f7d971575da41a9b833f6b3e7fd8052 | tar -xz
+cd aql-234247709f7d971575da41a9b833f6b3e7fd8052/cmd/go
 GOFLAGS=-mod=mod go build -o "$HOME/.local/bin/aql" ./aql
 ```
 
@@ -38,14 +38,14 @@ Or clone and check the ref out, then build the same `cmd/go` target:
 
 ```bash
 git clone https://github.com/aql-lang/aql
-git -C aql checkout c5fbb041b65ceab442b1df16e84a88b9365d71d8
+git -C aql checkout 234247709f7d971575da41a9b833f6b3e7fd8052
 (cd aql/cmd/go && GOFLAGS=-mod=mod go build -o "$HOME/.local/bin/aql" ./aql)
 ```
 
 Make sure `$HOME/.local/bin` is on your `PATH`, then check it:
 
 ```bash
-aql -version    # => aql c5fbb04-main
+aql -version    # => aql 2342477-main
 ```
 
 Run any script in this repo by passing its path:
@@ -54,7 +54,7 @@ Run any script in this repo by passing its path:
 aql test/stats_smoke_test.aql
 ```
 
-This module is verified against aql commit `c5fbb04`; `aql:matrix-util`
+This module is verified against aql commit `2342477`; `aql:matrix-util`
 and the runtime behaviours this library relies on require this ref or
 newer. In remote Claude Code sessions a SessionStart hook builds it
 automatically.

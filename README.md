@@ -111,7 +111,7 @@ test/stats_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/stats_prop_spec.aql   property-based tests — declarative spec format
 test/stats_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      documentation (above)
-dx-report.md               developer-experience notes (current pin: aql @ c5fbb04)
+dx-report.md               developer-experience notes (current pin: aql @ 2342477)
 proposals/                 language proposals raised from this module's DX
 ```
 
