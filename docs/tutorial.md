@@ -100,7 +100,7 @@ Add this to the file:
 
 ```aql
 def s (Stats.summary [2 4 4 4] end)
-def _1 (Stats.push-all s [5 5 7 9] end)
+def _1 (Stats.push-all [5 5 7 9] s end)
 print (`mean: ${(Stats.mean s end)} n: ${(Stats.count s end)}`) end
 ```
 
@@ -126,7 +126,7 @@ combine in constant time — no re-reading the inputs. Build two and merge:
 ```aql
 def a (Stats.summary [2 4 4 4] end)
 def b (Stats.summary [5 5 7 9] end)
-def _m (Stats.merge a b end)
+def _m (Stats.merge b a end)
 print (`merged mean: ${(Stats.mean a end)} merged stddev: ${(Stats.stddev a end)}`) end
 ```
 

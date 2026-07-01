@@ -38,7 +38,7 @@ O(1) (ideal for parallel or streaming aggregation):
 ```aql
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def merged (Stats.merge a b end)
+def merged (Stats.merge b a end)
 print ((Stats.mean merged end)) end                # => 4.5
 ```
 
@@ -64,7 +64,7 @@ and just want the API? Jump to the [Reference](docs/reference.md).
 
 | Group | Words |
 |-------|-------|
-| Accumulator | `Stats.summary xs` · `Stats.push s x` · `Stats.push-all s xs` · `Stats.merge a b` · `Stats.encode s` · `Stats.decode text` |
+| Accumulator | `Stats.summary xs` · `Stats.push x s` · `Stats.push-all xs s` · `Stats.merge b a` · `Stats.encode s` · `Stats.decode text` |
 | Descriptive (List or Summary) | `mean` · `sum` · `count` · `min` · `max` · `range` · `variance`/`pvariance` · `stddev`/`pstddev` · `skewness` · `kurtosis` |
 | Order statistics (List) | `median` · `quantile xs q` · `iqr` · `mode` |
 | Bivariate | `Stats.covariance xs ys` · `pcovariance` · `correlation` · `linreg` |

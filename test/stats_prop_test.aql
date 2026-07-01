@@ -59,10 +59,10 @@ Test.check-prop "merge-pools-correctly"
       def a (Stats.summary xs end)
       def b (Stats.summary ys end)
       def na (Stats.count a end)
-      def merged (Stats.merge a b end)
+      def merged (Stats.merge b a end)
       # Pool independently by pushing both lists into one summary.
       def pooled (Stats.summary xs end)
-      def _p (Stats.push-all pooled ys end)
+      def _p (Stats.push-all ys pooled end)
       ((Stats.count merged end) eq (na add 4))
         and ((Stats.mean merged end) close (Stats.mean pooled end))
   ]]

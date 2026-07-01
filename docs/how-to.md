@@ -134,8 +134,8 @@ place** and returned, so bind the result to a throwaway name:
 ```aql
 import "./stats.aql"
 def s (Stats.summary [] end)          # [] gives an empty Summary
-def _1 (Stats.push s 10 end)          # one value
-def _2 (Stats.push-all s [20 30 40] end)  # many at once
+def _1 (Stats.push 10 s end)          # one value (accumulator s last)
+def _2 (Stats.push-all [20 30 40] s end)  # many at once
 print (`mean: ${(Stats.mean s end)} n: ${(Stats.count s end)}`) end
 # => mean: 25.0 n: 4
 ```
@@ -145,11 +145,12 @@ Two Summaries combine in O(1) — and exactly, not approximately:
 ```aql
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def _m (Stats.merge a b end)
+def _m (Stats.merge b a end)
 print (`merged mean: ${(Stats.mean a end)}`) end   # => 4.5
 ```
 
-`merge` folds `b` into `a` and returns `a`; `b` is left untouched. All
+`merge` folds `b` into `a` and returns `a` (the receiver `a` is the last
+argument); `b` is left untouched. All
 the descriptive words accept a Summary; the order-statistic and
 bivariate words do not (they need the raw data). Background:
 [Explanation → Why a streaming Summary](explanation.md#why-a-streaming-summary).

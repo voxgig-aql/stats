@@ -26,20 +26,40 @@ import "./stats.aql"
 ## The one calling rule
 
 AQL has no `f(a, b)` and no `obj.method(a)`. A `Stats` call is written
-**verb-first** (the all-forward form):
+**forward** — verb first, then the arguments — **terminated with `end`**
+(or wrapped in parens). Without a terminator the verb swallows the
+following token — wrong result or a dispatch error.
 
 ```
-Stats.verb data arg1 arg2 end
+Stats.verb arg1 arg2 … receiver end
 ```
 
-Verb first, then the data, then any extra args, **terminated with `end`**
-(or wrap the whole call in parens). Without a terminator the verb
-swallows the following token — wrong result or a dispatch error.
+**Receiver-last.** Every word puts its *receiver* (the thing it reads or
+mutates) as the **LAST** argument. For the pure words that receiver is
+just the data, and it's the only/last arg anyway (`Stats.mean xs end`).
+For the streaming accumulator words the receiver is the `Summary`, so the
+value(s) come **first** and the `Summary` comes **last**:
 
 ```aql
-print ((Stats.mean [1 2 3 4 5] end)) end          # => 3.0
-print ((Stats.median [2 4 4 4 5 5 7 9] end)) end   # => 4.5
+print ((Stats.mean   [1 2 3 4 5] end)) end          # => 3.0
+print ((Stats.median [2 4 4 4 5 5 7 9] end)) end     # => 4.5
+Stats.push 5 s end            # value first, accumulator s LAST
+Stats.push-all [6 7] s end    # list  first, accumulator s LAST
+Stats.merge b a end           # fold b into a; a (the receiver) LAST
 ```
+
+Receiver-last is what makes **piping** work too: because the `Summary`
+is the last param it also binds when it flows in from the **left**, so
+both of these are correct and identical —
+
+```aql
+Stats.push 5 s end     # forward: value, then receiver
+s Stats.push 5 end     # piping:  receiver from the left, value forward
+```
+
+The **only** shape that misbinds is *receiver-first-all-forward*
+(`Stats.push s 5`) — the accumulator and the value silently swap, no
+error. Write value-first (`Stats.push 5 s`) or pipe (`s Stats.push 5`).
 
 (The core words `each`/`fold`, indexing `get`, and the matrix accessors
 `MatrixUtil.row`/`col` read their subject from the stack and stay
@@ -53,8 +73,8 @@ The **order-statistic** words take a `List` only.
 | Call | Returns | Notes |
 |------|---------|-------|
 | `Stats.summary xs end` | `Summary` | Build a streaming accumulator from a List (`[]` ⇒ empty). |
-| `Stats.push s x end` / `Stats.push-all s xs end` | `Summary` | **Mutates** `s` in place, returns it. |
-| `Stats.merge a b end` | `Summary` | Combine moments of `b` into `a` (mutates `a`). Always compatible. |
+| `Stats.push x s end` / `Stats.push-all xs s end` | `Summary` | Value(s) first, accumulator `s` **last**. **Mutates** `s`, returns it. |
+| `Stats.merge b a end` | `Summary` | Fold moments of `b` into `a` (receiver `a` **last**, mutated & returned). Always compatible. |
 | `Stats.encode s end` / `Stats.decode text end` | `String` / `Summary` | jsonic snapshot round-trip; bad text raises `bad_payload`. |
 | `Stats.mean x end` / `sum` / `count` / `min` / `max` / `range` | `Float`/`Integer` | `x` = List or Summary. |
 | `Stats.variance x end` / `stddev x end` | `Float` | **Sample** (n-1). Needs ≥ 2 values. |
@@ -90,10 +110,15 @@ print ((Stats.median xs end))   end   # => 4.5
 Streaming accumulator — build once, query many; merge is O(1):
 
 ```aql
+def s (Stats.summary [] end)
+def _1 (Stats.push-all [1 2 3 4] s end)   # value(s) first, accumulator last
+def _2 (Stats.push 5 s end)               # or pipe: s Stats.push 5 end
+print ((Stats.mean s end)) end            # => 3.0
+
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def m (Stats.merge a b end)
-print ((Stats.mean m end)) end        # => 4.5
+def m (Stats.merge b a end)               # fold b into a; a is the receiver
+print ((Stats.mean m end)) end            # => 4.5
 def back (Stats.decode (Stats.encode m end) end)   # persist + reload
 ```
 
@@ -112,12 +137,41 @@ def cov (Stats.cov-matrix mat end)             # => Matrix(2x2)
 |---------|------|-----|
 | `Stats.mean(xs)` / `xs.mean()` | `Stats.mean xs end` | AQL has no call/method syntax. |
 | `Stats.mean xs` mid-expression, no terminator | `Stats.mean xs end` | The verb swallows the next token. |
+| `Stats.push s x` / `Stats.merge a b` (receiver first) | `Stats.push x s` / `Stats.merge b a` (receiver **last**), or pipe `s Stats.push x` | Receiver-last convention: the `Summary` is the last arg. Receiver-first-all-forward silently swaps value & accumulator — no error, wrong moments. |
 | `Stats.median s end` on a Summary | pass the raw **List** | Order statistics need the data; a Summary raises `needs_data`. |
 | treat `Stats.variance` as population | `Stats.pvariance` for population | Bare `variance`/`stddev` are **sample** (n-1). |
 | keep a pre-`push` copy of a Summary | none — `push`/`merge` mutate in place | The argument and the return value are the same object. |
 | `xs get i` with a variable `i` | `xs get (i)` | Bare words after `get` are read as atom keys; parenthesise variable indices. |
 | build a Matrix without importing matrix-util | `import "aql:matrix-util"` in your script | The library's deps are not re-exported to callers. |
 | `"label" print (v) print` | `print (v) end`, one per statement | `print` collects forward; chains print out of order. |
+
+## By design (not bugs)
+
+- **Receiver-last binds two ways.** `Stats.push value s` (forward) and
+  `s Stats.push value` (piping) are identical; only receiver-first
+  (`Stats.push s value`) misbinds. Same for `push-all` and `merge`.
+- **Order statistics need a List, never a Summary.**
+  `median`/`quantile`/`iqr`/`mode` raise `needs_data` on a `Summary` —
+  the raw data is gone once it's folded into running moments. Keep (or
+  re-pass) the List for those words.
+- **`eq` is identity for Lists/Maps; use `deq` for structure.**
+  `[1 2 3] eq [1 2 3]` is `false` (different objects); `[1 2 3] deq
+  [1 2 3]` is `true`. Compare Summaries/encoded snapshots with `deq`, and
+  never assert list results with `eq`.
+- **Want a mutable Map/List? use `flex`.** Plain `{…}`/`[…]` are
+  immutable; `flex {a: 1}` gives a Map you can `set` into. `Summary`
+  itself is a sealed `class` — construct it only via `Stats.summary` and
+  mutate only through `push`/`push-all`/`merge`.
+- **Integer overflow is fail-loud (intended).** AQL `Integer` is 63-bit
+  and overflow **raises**, it does not wrap. Stats floats sums-of-squares
+  up front (all moment math is `Float`) so large counts don't trip it —
+  pass Floats if you're near the edge.
+- **Matrix operand-order gotchas** (only if you build matrices yourself):
+  `MatrixUtil.mat-mul X Y` computes **Y·X** (operands reversed — for
+  `XᵀX` write `MatrixUtil.mat-mul X (MatrixUtil.transpose X)`), and
+  `MatrixUtil.elem` is `(col, row)`, not `(row, col)`. Both are silent
+  wrong-shape/out-of-bounds, not clean errors. Prefer `MatrixUtil.row` +
+  List indexing.
 
 If the full repo is available, `AGENTS.md`, `api.json` (machine-readable
 signatures), and `docs/reference.md` have the complete guide;

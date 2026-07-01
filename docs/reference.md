@@ -105,8 +105,8 @@ the same object.
 
 | | |
 |--|--|
-| **Call**    | `Stats.push s x end` |
-| **Args**    | `s: Summary`, `x: Number` |
+| **Call**    | `Stats.push x s end` (value first, accumulator last; `s Stats.push x end` also binds) |
+| **Args**    | `x: Number`, `s: Summary` |
 | **Returns** | the same `Summary`, mutated |
 
 ### `Stats.push-all`
@@ -115,8 +115,8 @@ Add every element of a List.
 
 | | |
 |--|--|
-| **Call**    | `Stats.push-all s xs end` |
-| **Args**    | `s: Summary`, `xs: List` |
+| **Call**    | `Stats.push-all xs s end` (list first, accumulator last; `s Stats.push-all xs end` also binds) |
+| **Args**    | `xs: List`, `s: Summary` |
 | **Returns** | the same `Summary`, mutated |
 
 ### `Stats.merge`
@@ -125,15 +125,15 @@ Combine the moments of `b` into `a` (parallel/Pébay combine).
 
 | | |
 |--|--|
-| **Call**    | `Stats.merge a b end` |
-| **Args**    | `a: Summary`, `b: Summary` |
+| **Call**    | `Stats.merge b a end` (receiver `a` last; `a Stats.merge b end` also binds) |
+| **Args**    | `b: Summary`, `a: Summary` |
 | **Returns** | `a`, mutated to hold both |
 | **Effect**  | `a` is mutated; `b` is unchanged. Always compatible (no parameters to disagree on). O(1). |
 
 ```aql
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def _m (Stats.merge a b end)
+def _m (Stats.merge b a end)
 print ((Stats.mean a end)) end   # => 4.5
 ```
 

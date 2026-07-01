@@ -7,9 +7,9 @@
 #
 #   --- accumulator (a streaming, mergeable Summary) ---
 #   Stats.summary xs            → Summary   (build from a List; [] ⇒ empty)
-#   Stats.push s x              → Summary   (mutated in place)
-#   Stats.push-all s xs         → Summary   (mutated in place)
-#   Stats.merge a b             → Summary   (b's moments folded into a)
+#   Stats.push x s              → Summary   (value x into accumulator s; mutated in place)
+#   Stats.push-all xs s         → Summary   (List xs into accumulator s; mutated in place)
+#   Stats.merge b a             → Summary   (b's moments folded into a; a mutated)
 #   Stats.encode s              → String    (jsonic snapshot)
 #   Stats.decode text           → Summary   (rebuilt snapshot)
 #
@@ -213,21 +213,26 @@ def require-n fn [
 
 # --- public accumulator words ---------------------------------------
 
+# Receiver-last (the accumulator `s` is the LAST param) so the forward
+# form `Stats.push value summary` and the piping form `summary Stats.push
+# value` both bind; only receiver-first-all-forward would misbind.
 def stat-push fn [
-  [s:Summary x:Any] [Summary] [
+  [x:Any s:Summary] [Summary] [
     welford-push s (convert Float x)
   ]
 ]
 
 def stat-push-all fn [
-  [s:Summary xs:List] [Summary] [
+  [xs:List s:Summary] [Summary] [
     s xs [var [[x acc] welford-push acc (convert Float x)]] fold
   ]
 ]
 
-# Parallel-combine the moments of b into a (Chan/Pébay), mutating a.
+# Parallel-combine the moments of b into a (Chan/Pébay), mutating a. The
+# receiver/return `a` is the LAST param (receiver-last), so `Stats.merge b
+# a` folds b into a and returns a.
 def stat-merge fn [
-  [a:Summary b:Summary] [Summary] [
+  [b:Summary a:Summary] [Summary] [
     def na a.n
     def nb b.n
     if (nb eq 0) [a] [

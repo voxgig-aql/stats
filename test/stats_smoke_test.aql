@@ -51,13 +51,13 @@ print (`zscores:       ${(Stats.zscores [1 2 3] end)}`) end
 
 # --- accumulator: build / push / merge / encode / decode -----------
 def acc (Stats.summary [10 20] end)
-def _push (Stats.push-all acc [30] end)
-def _push2 (Stats.push acc 40 end)
+def _push (Stats.push-all [30] acc end)
+def _push2 (Stats.push 40 acc end)
 print (`acc-mean:  ${(Stats.mean acc end)} (n=${(Stats.count acc end)})`) end
 
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def merged (Stats.merge a b end)
+def merged (Stats.merge b a end)
 print (`merged-mean: ${(Stats.mean merged end)} merged-var: ${(Stats.variance merged end)}`) end
 
 def snapshot (Stats.encode merged end)

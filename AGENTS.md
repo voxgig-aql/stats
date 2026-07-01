@@ -40,22 +40,36 @@ import "./stats.aql"
 ## The one calling rule
 
 AQL is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
-A `Stats` call is written **verb-first** (the all-forward form):
+A `Stats` call is written **forward** — the verb first, then the
+arguments — with the **receiver last**:
 
 ```
-Stats.verb data arg1 arg2 end
+Stats.verb arg1 arg2 … receiver end
 ```
 
-— the **verb comes first**, then the data, then any extra arguments, and
-the call is **terminated with `end`** (or wrapped in parens). Without a
-terminator the verb can swallow whatever token follows it and you get
-wrong results or a dispatch error.
+— the **verb comes first**, then the arguments, and the **receiver** (the
+thing the word reads or mutates) is the **LAST** argument. The call is
+**terminated with `end`** (or wrapped in parens). Without a terminator
+the verb can swallow whatever token follows it and you get wrong results
+or a dispatch error.
+
+For the pure words the receiver is just the data, and it's the only/last
+arg anyway:
 
 ```aql
 def xs [2 4 4 4 5 5 7 9]
 print ((Stats.mean   xs end)) end    # => 5.0
 print ((Stats.median xs end)) end    # => 4.5
 ```
+
+For the streaming accumulator words the receiver is the `Summary`, so the
+value(s) come **first** and the `Summary` comes **last** —
+`Stats.push value s`, `Stats.push-all values s`, `Stats.merge other a`.
+Receiver-last means the `Summary` also binds when it flows in from the
+**left**, so `Stats.push value s` and `s Stats.push value` are identical.
+The **only** shape that misbinds is *receiver-first-all-forward*
+(`Stats.push s value`) — the accumulator and the value silently swap, no
+error.
 
 `(… )` parentheses count as a terminator, so `(Stats.mean xs)` is fine
 too; use `end` for top-level statements that aren't already wrapped.
@@ -74,9 +88,9 @@ Every **descriptive** word accepts either a `List` of numbers or a
 | Call | Returns | Notes |
 |------|---------|-------|
 | `Stats.summary xs end` | `Summary` | Build from a List (`[]` ⇒ empty). |
-| `Stats.push s x end` | the **same** `s` (mutated) | Add one observation. |
-| `Stats.push-all s xs end` | the **same** `s` (mutated) | Add every element of a List. |
-| `Stats.merge a b end` | the **same** `a` (mutated) | Combine `b`'s moments into `a`. Always compatible. |
+| `Stats.push x s end` | the **same** `s` (mutated) | Add one observation. Value first, accumulator `s` **last** (or pipe `s Stats.push x`). |
+| `Stats.push-all xs s end` | the **same** `s` (mutated) | Add every element of a List. List first, accumulator `s` **last**. |
+| `Stats.merge b a end` | the **same** `a` (mutated) | Fold `b`'s moments into `a`; receiver `a` **last**. Always compatible. |
 | `Stats.encode s end` | `String` | jsonic snapshot of the moments. |
 | `Stats.decode text end` | `Summary` | Rebuild from a snapshot; bad text raises `bad_payload`. |
 
@@ -162,8 +176,8 @@ The streaming accumulator — build, push, query:
 
 ```aql
 def s (Stats.summary [1 2 3 4] end)
-def _ (Stats.push-all s [5 6 7 8] end)
-def _2 (Stats.push s 9 end)
+def _ (Stats.push-all [5 6 7 8] s end)
+def _2 (Stats.push 9 s end)
 print ((Stats.count s end)) end       # => 9
 print ((Stats.mean  s end)) end       # => 5.0
 ```
@@ -174,7 +188,7 @@ parallel/streaming aggregation:
 ```aql
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
-def merged (Stats.merge a b end)
+def merged (Stats.merge b a end)
 print ((Stats.mean     merged end)) end   # => 4.5
 print ((Stats.variance merged end)) end   # => 6.0
 ```

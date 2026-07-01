@@ -119,19 +119,38 @@ def near fn [
 
 [
   def s (Stats.summary [] end)
-  def _ (Stats.push-all s [1 2 3 4] end)
+  def _ (Stats.push-all [1 2 3 4] s end)
   4   (Stats.count s end) Assert.equal end
   2.5 (Stats.mean s end)  Assert.equal end
-  def _2 (Stats.push s 5 end)
+  def _2 (Stats.push 5 s end)
   5   (Stats.count s end) Assert.equal end
   3.0 (Stats.mean s end)  Assert.equal end
 ] "accumulator" Test.test end
 
 
+# --- receiver-last convention: forward and piping bind identically -
+# push/push-all/merge take the accumulator as their LAST param, so the
+# forward form (value first) and the piping form (accumulator from the
+# left) must agree. This locks the convention against a silent reflip.
+
+[
+  def sp (Stats.summary [] end)
+  def _p (sp Stats.push-all [1 2 3 4] end)   # piping: accumulator from left
+  def _p2 (sp Stats.push 5 end)
+  5   (Stats.count sp end) Assert.equal end
+  3.0 (Stats.mean sp end)  Assert.equal end
+  def ap (Stats.summary [1 2 3 4] end)
+  def bp (Stats.summary [5 6 7 8] end)
+  def mp (ap Stats.merge bp end)             # piping: receiver a from left
+  8   (Stats.count mp end) Assert.equal end
+  4.5 (Stats.mean mp end)  Assert.equal end
+] "accumulator-receiver-last-piping" Test.test end
+
+
 [
   def a (Stats.summary [1 2 3 4] end)
   def b (Stats.summary [5 6 7 8] end)
-  def m (Stats.merge a b end)
+  def m (Stats.merge b a end)
   8   (Stats.count m end)    Assert.equal end
   4.5 (Stats.mean m end)     Assert.equal end
   6.0 (Stats.variance m end) Assert.equal end
