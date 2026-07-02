@@ -42,7 +42,7 @@ type on whole-valued moments.
 
 ## 1. 🔴 `get`/`set` read a bare word index as an atom key, silently
 
-`get`/`set` on a List or Array index, and on a Map/class field, share one
+`get`/`set` on a List or FlexList index, and on a Map/class field, share one
 surface: the index/key argument is taken **literally**. A bare *word*
 there is treated as an atom (a field name), not evaluated as a variable.
 With a literal integer it works; with a variable it silently returns
@@ -185,7 +185,7 @@ the one-value-per-statement idiom `print (value) end`.
   `det`, `dot`, `scale`, and the accessors are enough for covariance and
   correlation matrices, but OLS needs a linear solve, so this module
   ships a small Gaussian-elimination solver (partial pivoting) over
-  `Array`s and feeds it `XᵀX` / `Xᵀy` built from the matrix words.
+  `FlexList`s and feeds it `XᵀX` / `Xᵀy` built from the matrix words.
 - **The DX feedback loop still shows.** The two 🔴 items here are
   call-convention sharp edges (literal index keys, `do`-gated map values)
   rather than interpreter bugs; both are catchable by property tests, and

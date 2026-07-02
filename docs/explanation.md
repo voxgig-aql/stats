@@ -144,7 +144,7 @@ directly in `stats.aql`. This is deliberate: `aql:matrix-util` offers a
 matrix multiply and transpose but **no matrix inverse**, so the library
 cannot lean on `b = (XᵀX)⁻¹ Xᵀy`. Solving the system by elimination is
 both more direct and numerically better than forming an explicit
-inverse anyway. The elimination copies the rows into mutable Arrays,
+inverse anyway. The elimination copies the rows into mutable FlexLists,
 pivots on the largest-magnitude entry in each column for stability, and
 back-substitutes. If a pivot is effectively zero — meaning the predictors
 are linearly dependent (a duplicated or constant column, or fewer

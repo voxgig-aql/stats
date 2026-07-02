@@ -671,16 +671,16 @@ def stat-standardize fn [
 #
 # Solve a square system A x = b by Gaussian elimination with partial
 # pivoting. A is a List of equal-length rows (Lists); b is a List. Rows
-# are copied into mutable Arrays so pivoting and elimination run in
+# are copied into mutable FlexLists so pivoting and elimination run in
 # place. A zero pivot (within tolerance) raises `singular`.
 
 def solve-linear fn [
   [a:List b:List] [List] [
     def n (a size)
-    def rows (make Array ((iota n) each [var [[i]
-      make Array ((a get (i)) each [var [[v] (convert Float v)]])
+    def rows (flex ((iota n) each [var [[i]
+      flex ((a get (i)) each [var [[v] (convert Float v)]])
     ]]))
-    def rhs (make Array (b each [var [[v] (convert Float v)]]))
+    def rhs (flex (b each [var [[v] (convert Float v)]]))
     def _elim ((iota n) each [var [[col]
       # find pivot row with the largest |value| in this column
       def piv (col (iota n) [var [[r best]
@@ -693,11 +693,11 @@ def solve-linear fn [
       ]
       # swap pivot row into place (rows and rhs)
       def tmp-row (rows get (col))
-      set (col) (rows get (piv)) rows end
-      set (piv) (tmp-row) rows end
+      set (col) (rows get (piv)) rows end drop
+      set (piv) (tmp-row) rows end drop
       def tmp-rhs (rhs get (col))
-      set (col) (rhs get (piv)) rhs end
-      set (piv) (tmp-rhs) rhs end
+      set (col) (rhs get (piv)) rhs end drop
+      set (piv) (tmp-rhs) rhs end drop
       # eliminate below
       def pivrow (rows get (col))
       def pivval (pivrow get (col))
@@ -706,27 +706,27 @@ def solve-linear fn [
           def rr (rows get (r))
           def factor ((rr get (col)) div pivval)
           def _c ((iota n) each [var [[c]
-            set (c) ((rr get (c)) sub (factor mul (pivrow get (c)))) rr end
+            set (c) ((rr get (c)) sub (factor mul (pivrow get (c)))) rr end drop
             0
           ]])
-          set (r) ((rhs get (r)) sub (factor mul (rhs get (col)))) rhs end
+          set (r) ((rhs get (r)) sub (factor mul (rhs get (col)))) rhs end drop
           0
         ] [0]
       ]])
       0
     ]])
-    # back-substitution into a mutable solution Array
-    def x (make Array ((iota n) each [var [[i] 0.0]]))
+    # back-substitution into a mutable solution FlexList
+    def x (flex ((iota n) each [var [[i] 0.0]]))
     def _back ((iota n) each [var [[step]
       def i (n sub 1 sub step)
       def rr (rows get (i))
       def s (0.0 (iota n) [var [[j acc]
         if (j gt i) [acc add ((rr get (j)) mul (x get (j)))] [acc]
       ]] fold)
-      set (i) (((rhs get (i)) sub s) div (rr get (i))) x end
+      set (i) (((rhs get (i)) sub s) div (rr get (i))) x end drop
       0
     ]])
-    convert List x
+    node x
   ]
 ]
 
