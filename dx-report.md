@@ -183,3 +183,30 @@ the one-value-per-statement idiom `print (value) end`.
 | 7 | 🟢 | empty `[]` literal poisons top-level query types in `aql check` | seed from non-empty data in checked scripts |
 | 8 | 🟢 | one-letter uppercase names parse as type variables | bind values to lowercase names |
 | 9 | 🟢 | `print` forward-collection reverses chains | one `print (value) end` per statement |
+
+---
+
+## Upgrade note — `main` @ 0721e8 (2026-07-11)
+
+Re-evaluated against the then-newest `main` (`0721e8280e01`, 17 days past
+the pinned `12a44e0`). **The pin stays at `12a44e0`** — `main` has landed
+breaking changes that this module has not migrated to, and the fetch/CI
+build paths were blocked in that session (details and the Go-module-proxy
+workaround are in
+[`aql-language-dx-report.md`](aql-language-dx-report.md#update--2026-07-11-re-evaluation-against-newer-main)).
+What changes when the pin is eventually bumped:
+
+- **#1 is fixed.** Bare `get` no longer treats a variable as an atom key —
+  `xs get i` now evaluates `i`, so the silent-`None` trap is gone. The
+  parenthesised `xs get (i)` this module uses keeps working.
+- **New: `get` keys must be quoted.** The flip side: a *literal* key must
+  be `get k/q` or `get "k"` — bare `get n` now raises `undefined word`.
+  Every bare-atom `get` here (`get n`, `st get cur`, `e get code`, …)
+  needs quoting, or a dot-access where the receiver is a class (`s.n`).
+- **New: matrix types namespaced.** Bare `Matrix` is gone; the portable
+  `fn`-param annotation is `Any` (dotted `MatrixUtil.Matrix` isn't valid
+  in a param spec). The eight `[mat:Matrix]` / `[x:Matrix …]` signatures
+  become `[mat:Any]`.
+
+All nine findings above still reproduce on `12a44e0`, where every suite
+stays green across the interpreter, `aql check`, and the byte compiler.
