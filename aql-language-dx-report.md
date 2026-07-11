@@ -17,6 +17,86 @@ which logs the specific runtime gotchas this module worked around. Here
 I step back: what AQL gets right, where it bites, and what would most
 improve the experience of writing real code in it.
 
+## Update — 2026-07-11: re-evaluation against newer `main`
+
+Re-ran this evaluation against the newest `main`, `0721e8280e01`
+(2026-07-11), 17 days past the pinned `12a44e0`. Three things stood out.
+
+**Fetching it was itself a DX story.** Midway through the session the
+sandbox's egress policy tightened: `github.com`, `api.github.com`, and
+`codeload.github.com` all began returning 403 for `aql-lang/aql`, and a
+per-owner `add_repo` is refused across owners. The one channel left open
+was the **Go module proxy** (`proxy.golang.org`, allowlisted). It served
+both the latest-commit pseudo-version (revealing `main` had moved) and
+the per-module source zips; reassembling the three relative-`replace`
+siblings — `cmd/go`, `lang/go`, `eng/go` — from their zips into the
+monorepo layout produced a tree that `GOFLAGS=-mod=mod go build` compiled
+cleanly. So the module proxy doubles as a source mirror when the git
+hosts are blocked — handy, but fragile (it only works because the replace
+graph is tiny).
+
+**One old finding is FIXED.** The 🔴 silent-`None` footgun (§2 below) is
+gone: `get` no longer treats a bare word as an implicit atom key — it
+**evaluates** it as an ordinary expression. So `xs get i` with a bound
+`i` now returns the indexed element (`20`), where `12a44e0` silently
+returned `None`. This is exactly the "make it loud / make it consistent"
+fix §2 asked for.
+
+**…but the same change, plus a type reshuffle, breaks the library on
+`main`; the pin stays put.** On `0721e8` this module no longer imports or
+runs, in two incompatible ways:
+
+- 🔴 **`get` keys must now be quoted.** The flip side of the fix above:
+  a *literal* key must be an atom or string — `m get n/q` or `m get "n"`,
+  not `m get n` (which now raises `undefined word: n`). Class dot-access
+  (`s.n`) still works. Pervasive, since field reads, map lookups, and the
+  `e get code` error idiom all used the bare-atom form.
+- 🔴 **The matrix types were namespaced.** Bare `Matrix` / `Vector` /
+  `Tensor` are gone as global type names; they now live under the module
+  binding (`MatrixUtil.Matrix`, `is MatrixUtil.Tensor`). A `fn` param
+  annotated `[mat:Matrix]` fails at import with `unknown type "Matrix"`,
+  and `x is Matrix` is `undefined word: Matrix`. A dotted name is **not**
+  accepted in a `fn` param spec (`invalid parameter: {mat:…}.Matrix`), and
+  a local alias mints a distinct type the checker won't unify — so the
+  only portable matrix-argument annotation is now `Any`.
+
+**Update — migration attempted, and it hit a wall.** I applied the two
+fixes above (`Matrix`→`Any`; every bare-atom `get k`→`get k/q`) and found
+`0721e8` had changed more than that:
+
+- 🔴 **The `Array` type was removed** (superseded by `FlexList`). `make
+  Array …` raises `undefined word: Array`, so the OLS Gaussian solver had
+  to move to `make FlexList`. `FlexList` mutates in place and *is* a
+  `List`, but `convert List` on it is gone — you round-trip through
+  `each` instead.
+- 🔴 **Execution is now gated on a mandatory pre-flight check**, and **the
+  default engine is the bytecode compiler** (there are `-no-check` /
+  `AQL_NO_CHECK` and `-no-compile` / `AQL_NO_COMPILE` escapes). So a
+  program that draws *any* check error no longer runs at all under a plain
+  `aql X`.
+
+That last change turns the checker's `Any`-dispatch false positives (§5)
+from advisory noise into a hard blocker. With the matrix params forced to
+`Any` (there is no other valid annotation — bare `Matrix` is gone, dotted
+names are rejected, aliases don't unify), the dataset words draw spurious
+`no_signature` / "2 return values" errors when analysed through an import,
+so the check-gate refuses to run them; and even with `-no-check` the
+default compiler mis-dispatches `iota` inside them. The descriptive,
+order, bivariate, accumulator, and distribution words all compute
+correctly on `0721e8` — but the matrix/dataset words can't be made to run
+under any default invocation without upstream fixes (the checker accepting
+`Any`→typed dispatch, and a compiler/runtime fix in that path).
+
+So the migration is **blocked on the state of `main`, not on the
+library**. `0721e8` is a same-day tip mid-refactor; a bump also can't be
+gate-verified from here (the harness/hook/CI rebuild aql via
+git-clone/codeload, which this session's egress blocks). The library
+stays pinned to `12a44e0`, where all five suites remain green across
+interpreter, `aql check`, and the byte compiler; every finding below was
+re-confirmed on it. Revisit once `main` settles behind a tag — the
+descriptive-side migration is mechanical, but the matrix-side needs the
+upstream checker/compiler to stop choking on `Any`-typed matrix params.
+
 Severity for the issues below: **🔴 high** (silent wrong results, crash,
 or a blocked use case) · **🟡 medium** (friction with a clear
 workaround) · **🟢 low** (papercut).
@@ -279,7 +359,7 @@ language's own discipline elsewhere makes feel avoidable.
 | # | Severity | Issue | Workaround today |
 |---|----------|-------|------------------|
 | 1 | 🔴 | `comp/r apply` frame cleanup over-pops on the 2nd call | avoid re-invoking a captured fn via a `comp/r` helper twice in one frame |
-| 2 | 🔴 | `get`/`set` read a bare variable index as an atom (silent `None`) | parenthesise variable indices: `xs get (i)` |
+| 2 | 🔴→✅ | `get`/`set` read a bare variable index as an atom (silent `None`) — **fixed on `main` @ 0721e8** (2026-07-11 update) | parenthesise variable indices: `xs get (i)` |
 | 3 | 🔴 | `{k: [expr]}` map value only evaluates under `do` | build such maps with `do {…}` |
 | 4 | 🟡 | native multi-arg operand order surprising (`mat-mul` is B·A; `elem` is col,row) | verify against a known value; prefer `row`/`col` over `elem` |
 | 5 | 🟡 | `aql check` reports false hard errors on a library in isolation | gate on `check` *through* the suites; standalone is advisory |
