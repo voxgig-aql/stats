@@ -60,16 +60,42 @@ runs, in two incompatible ways:
   a local alias mints a distinct type the checker won't unify — so the
   only portable matrix-argument annotation is now `Any`.
 
-This is the churn the pin discipline exists for: `0721e8` is a same-day
-`main` tip mid-refactor, and the divergence harness / session hook / CI
-all rebuild aql via git-clone or codeload — which this session's egress
-now blocks — so a bump couldn't even be gate-verified from here. The
-library stays pinned to `12a44e0`, where all five suites remain green
-across interpreter, `aql check`, and the byte compiler; every finding
-below was re-confirmed on it. The migration, when `main` settles (ideally
-behind a tag), is mechanical: `Matrix`→`Any` on the dataset params, and
-every bare-atom `get k` → `get k/q` (or a dot-access where the receiver
-is a class).
+**Update — migration attempted, and it hit a wall.** I applied the two
+fixes above (`Matrix`→`Any`; every bare-atom `get k`→`get k/q`) and found
+`0721e8` had changed more than that:
+
+- 🔴 **The `Array` type was removed** (superseded by `FlexList`). `make
+  Array …` raises `undefined word: Array`, so the OLS Gaussian solver had
+  to move to `make FlexList`. `FlexList` mutates in place and *is* a
+  `List`, but `convert List` on it is gone — you round-trip through
+  `each` instead.
+- 🔴 **Execution is now gated on a mandatory pre-flight check**, and **the
+  default engine is the bytecode compiler** (there are `-no-check` /
+  `AQL_NO_CHECK` and `-no-compile` / `AQL_NO_COMPILE` escapes). So a
+  program that draws *any* check error no longer runs at all under a plain
+  `aql X`.
+
+That last change turns the checker's `Any`-dispatch false positives (§5)
+from advisory noise into a hard blocker. With the matrix params forced to
+`Any` (there is no other valid annotation — bare `Matrix` is gone, dotted
+names are rejected, aliases don't unify), the dataset words draw spurious
+`no_signature` / "2 return values" errors when analysed through an import,
+so the check-gate refuses to run them; and even with `-no-check` the
+default compiler mis-dispatches `iota` inside them. The descriptive,
+order, bivariate, accumulator, and distribution words all compute
+correctly on `0721e8` — but the matrix/dataset words can't be made to run
+under any default invocation without upstream fixes (the checker accepting
+`Any`→typed dispatch, and a compiler/runtime fix in that path).
+
+So the migration is **blocked on the state of `main`, not on the
+library**. `0721e8` is a same-day tip mid-refactor; a bump also can't be
+gate-verified from here (the harness/hook/CI rebuild aql via
+git-clone/codeload, which this session's egress blocks). The library
+stays pinned to `12a44e0`, where all five suites remain green across
+interpreter, `aql check`, and the byte compiler; every finding below was
+re-confirmed on it. Revisit once `main` settles behind a tag — the
+descriptive-side migration is mechanical, but the matrix-side needs the
+upstream checker/compiler to stop choking on `Any`-typed matrix params.
 
 Severity for the issues below: **🔴 high** (silent wrong results, crash,
 or a blocked use case) · **🟡 medium** (friction with a clear

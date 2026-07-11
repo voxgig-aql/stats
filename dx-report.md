@@ -207,6 +207,24 @@ What changes when the pin is eventually bumped:
   `fn`-param annotation is `Any` (dotted `MatrixUtil.Matrix` isn't valid
   in a param spec). The eight `[mat:Matrix]` / `[x:Matrix …]` signatures
   become `[mat:Any]`.
+- **New: `Array` removed** (→ `FlexList`); the OLS solver's `make Array`
+  becomes `make FlexList`, and its `convert List` becomes an `each`.
+- **New: execution is check-gated and compiles by default.** `aql X` now
+  refuses to run if the pre-flight check reports any error (`-no-check`
+  escapes), and the default engine is the byte compiler (`-no-compile`
+  escapes).
+
+I applied all of the above and the descriptive/order/bivariate/
+accumulator/distribution words then run correctly on `0721e8`. But the
+**matrix/dataset words hit a wall**: with `[mat:Any]` the checker draws
+false `no_signature` errors on them through an import, and the new
+check-gate refuses to run them; even with `-no-check` the default
+compiler mis-dispatches `iota` in that path. There is no valid matrix
+annotation that satisfies the checker (bare `Matrix` gone, dotted names
+rejected, aliases don't unify), so the block is **upstream**, not in this
+module. The pin therefore stays at `12a44e0` — see
+[`aql-language-dx-report.md`](aql-language-dx-report.md#update--2026-07-11-re-evaluation-against-newer-main)
+for the full attempt. Revisit once `main` settles behind a tag.
 
 All nine findings above still reproduce on `12a44e0`, where every suite
 stays green across the interpreter, `aql check`, and the byte compiler.
