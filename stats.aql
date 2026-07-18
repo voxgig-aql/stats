@@ -584,33 +584,33 @@ def stat-normal-cdf fn [
 
 # Each column of the matrix, as a List of Lists.
 def columns-of fn [
-  [mat:Matrix] [List] [
+  [mat:MatrixUtil.Matrix] [List] [
     def k (MatrixUtil.cols mat)
     (iota k) each [var [[j] (mat MatrixUtil.col j)]]
   ]
 ]
 
 def stat-col-means fn [
-  [mat:Matrix] [List] [
+  [mat:MatrixUtil.Matrix] [List] [
     (columns-of mat) each [var [[c] (stat-mean c)]]
   ]
 ]
 
 def stat-col-variances fn [
-  [mat:Matrix] [List] [
+  [mat:MatrixUtil.Matrix] [List] [
     (columns-of mat) each [var [[c] (stat-variance c)]]
   ]
 ]
 
 def stat-col-stddevs fn [
-  [mat:Matrix] [List] [
+  [mat:MatrixUtil.Matrix] [List] [
     (columns-of mat) each [var [[c] (stat-stddev c)]]
   ]
 ]
 
 # Sample covariance matrix: (1/(n-1)) Xcᵀ Xc, Xc the column-centered data.
 def centered-rows fn [
-  [mat:Matrix] [List] [
+  [mat:MatrixUtil.Matrix] [List] [
     def means (stat-col-means mat)
     def nrows (MatrixUtil.rows mat)
     def ncols (MatrixUtil.cols mat)
@@ -624,7 +624,7 @@ def centered-rows fn [
 ]
 
 def stat-cov-matrix fn [
-  [mat:Matrix] [Matrix] [
+  [mat:MatrixUtil.Matrix] [MatrixUtil.Matrix] [
     def nrows (MatrixUtil.rows mat)
     if (nrows gte 2) [] [
       def msg `Stats.cov-matrix: need at least 2 rows (observations)`
@@ -638,7 +638,7 @@ def stat-cov-matrix fn [
 ]
 
 def stat-cor-matrix fn [
-  [mat:Matrix] [Matrix] [
+  [mat:MatrixUtil.Matrix] [MatrixUtil.Matrix] [
     def cov (stat-cov-matrix mat)
     def k (MatrixUtil.cols cov)
     def sds ((iota k) each [var [[i] (MathUtil.sqrt ((cov MatrixUtil.row i) get (i)))]])
@@ -652,7 +652,7 @@ def stat-cor-matrix fn [
 ]
 
 def stat-standardize fn [
-  [mat:Matrix] [Matrix] [
+  [mat:MatrixUtil.Matrix] [MatrixUtil.Matrix] [
     def means (stat-col-means mat)
     def sds (stat-col-stddevs mat)
     def nrows (MatrixUtil.rows mat)
@@ -734,7 +734,7 @@ def solve-linear fn [
 # predictors) and response ys, via the normal equations XᵀX b = Xᵀy.
 # Prepend a column of 1s to x yourself for an intercept term.
 def stat-ols fn [
-  [x:Matrix ys:List] [List] [
+  [x:MatrixUtil.Matrix ys:List] [List] [
     def nrows (MatrixUtil.rows x)
     if (nrows eq (ys size)) [] [
       def msg `Stats.ols: rows of X (${nrows}) must match length of y (${ys size})`

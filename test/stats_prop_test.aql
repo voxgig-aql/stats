@@ -117,8 +117,8 @@ end
 
 # --- summary -------------------------------------------------------
 
-"---" print
-"results:" print
+"---" print end
+"results:" print end
 def _print-results ((Test.results end) each [
   var [[r]
     def nm (r "name" get)
@@ -127,7 +127,7 @@ def _print-results ((Test.results end) each [
     0
   ]
 ])
-"---" print
-"fail count: " print (Test.fail-count end) print
+"---" print end
+"fail count: " print end (Test.fail-count end) print end
 0 (Test.fail-count end) Assert.equal end
-"all green" print
+"all green" print end
