@@ -30,7 +30,7 @@ set -uo pipefail
 # union-narrowing behaviour this stats module relies on are present, and
 # all five suites interpret, check (0 errors), and compile identically to
 # the interpreter on it. Bump in lockstep with the workflow AQL_REF.
-AQL_BYTECODE_REF=7b1a4fbdd4cc0b93966a660d642416e714c02b98
+AQL_BYTECODE_REF=618562025d9e0154107306927911a8b1b046333c
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -55,7 +55,7 @@ if [ ! -x "$AQL" ]; then
   curl -fsSL "https://codeload.github.com/aql-lang/aql/tar.gz/$AQL_BYTECODE_REF" \
     | tar -xz -C "$src" --strip-components=1 || { echo "error: fetch/extract failed." >&2; exit 1; }
   mkdir -p "$CACHE"
-  ( cd "$src/cmd/go" && GOFLAGS=-mod=mod go build \
+  ( cd "$src/cmd/go" && GOWORK=off GOFLAGS=-mod=mod go build \
       -ldflags "-X github.com/aql-lang/aql/cmd/go.Version=$AQL_BYTECODE_REF" \
       -o "$AQL" ./aql ) || { echo "error: build failed." >&2; exit 1; }
   rm -rf "$src"
