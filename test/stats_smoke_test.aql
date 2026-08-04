@@ -9,7 +9,7 @@
 # Run:
 #   aql test/stats_smoke_test.aql
 
-import "aql:matrix-util" end
+import "boru:matrix-util" end
 import "./stats.aql" end
 
 print ("--- stats smoke demo ---") end

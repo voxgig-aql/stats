@@ -13,16 +13,16 @@ the [How-to guides](how-to.md).
 The module exports a single namespace, `Stats`, plus the `Summary` type.
 Import it with:
 
-```aql
+```boru
 import "./stats.aql"
 ```
 
 (No `end` is required after `import` on the pinned build; a trailing
 `end` is harmless.) A consuming script does **not** need to import
-`aql:math-util`, `aql:array-util`, `aql:matrix-util`, or
-`aql:struct-util` itself — `stats.aql` imports them internally. The one
+`boru:math-util`, `boru:array-util`, `boru:matrix-util`, or
+`boru:struct-util` itself — `stats.aql` imports them internally. The one
 exception: scripts that build a `Matrix` to pass to the dataset words
-must `import "aql:matrix-util"` themselves, because that binding is not
+must `import "boru:matrix-util"` themselves, because that binding is not
 re-exported.
 
 ---
@@ -33,7 +33,7 @@ Every operation is a forward-dispatched word: the **verb comes first**,
 then the data, then any extra arguments, and the call is **terminated
 with `end`** (or wrapped in parentheses), e.g. `Stats.mean xs end` or
 `(Stats.quantile xs 0.9)`. Without a terminator the word collects the
-following token as an argument. This is general AQL forward-precedence
+following token as an argument. This is general boru forward-precedence
 behaviour, not specific to this module. There is no `f(x)` or `x.f()`
 syntax.
 
@@ -130,7 +130,7 @@ Combine the moments of `b` into `a` (parallel/Pébay combine).
 | **Returns** | `a`, mutated to hold both |
 | **Effect**  | `a` is mutated; `b` is unchanged. Always compatible (no parameters to disagree on). O(1). |
 
-```aql
+```boru
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
 def _m (Stats.merge b a end)
@@ -147,7 +147,7 @@ Snapshot a Summary's moments as a jsonic String.
 | **Args**    | `s: Summary` |
 | **Returns** | `String` (`{n, mean, m2, m3, m4, min, max}`) |
 
-```aql
+```boru
 print ((Stats.encode (Stats.summary [1 2 3 4 5] end) end)) end
 # => {m2:10.0 m3:0.0 m4:34.0 max:5.0 mean:3.0 min:1.0 n:5}
 ```
@@ -189,7 +189,7 @@ each field's type back (Integer `n`, Float moments).
 
 `x` is a `List` or a `Summary`.
 
-```aql
+```boru
 def s (Stats.summary [2 4 4 4 5 5 7 9] end)
 print ((Stats.skewness s end)) end   # => 0.6562500000000001
 print ((Stats.kurtosis s end)) end   # => -0.21875
@@ -210,7 +210,7 @@ raises `needs_data`.
 | `iqr`      | `Stats.iqr xs end`        | Float | Inter-quartile range, Q3 − Q1. |
 | `mode`     | `Stats.mode xs end`       | Float | Most frequent value; smallest such value on a tie. |
 
-```aql
+```boru
 print ((Stats.quantile [1 2 3 4 5] 0.25 end)) end   # => 2.0
 ```
 
@@ -227,7 +227,7 @@ Two equal-length Lists; mismatched lengths raise `bad_input`.
 | `correlation` | `Stats.correlation xs ys end` | Float | Pearson `r` in `[-1, 1]`. `bad_input` if a variable has zero variance. |
 | `linreg`      | `Stats.linreg xs ys end`      | Map   | Simple regression of `ys` on `xs`: `{slope, intercept, r, r2}`. Predictor must have non-zero variance. |
 
-```aql
+```boru
 def fit (Stats.linreg [1 2 3 4 5] [2 4 5 4 5] end)
 print ((fit get slope)) end       # => 0.6
 print ((fit get intercept)) end   # => 2.2
@@ -243,7 +243,7 @@ print ((fit get intercept)) end   # => 2.2
 | `normal-pdf` | `Stats.normal-pdf x {mu, sigma} end` | Float | Normal probability density at `x`. `sigma > 0` (else `bad_input`). |
 | `normal-cdf` | `Stats.normal-cdf x {mu, sigma} end` | Float | Normal cumulative probability at `x`, via an Abramowitz–Stegun erf approximation (abs error ≈ 1.5e-7). `sigma > 0`. |
 
-```aql
+```boru
 print ((Stats.normal-cdf 0 {mu: 0.0, sigma: 1.0} end)) end   # => 0.5000000005
 print ((Stats.zscores [1 2 3] end)) end                      # => [-1.0, 0.0, 1.0]
 ```
@@ -266,8 +266,8 @@ These take a `MatrixUtil` Matrix whose **rows are observations** and
 | `standardize`   | `Stats.standardize mat end`   | Matrix | Each column z-scored (sample mean/stddev). |
 | `ols`           | `Stats.ols x ys end`          | List   | Least-squares coefficients via `XᵀX b = Xᵀy`. Rows of `X` must match length of `ys` (else `bad_input`); a rank-deficient system raises `singular`. Prepend a 1s column for an intercept. |
 
-```aql
-import "aql:matrix-util"
+```boru
+import "boru:matrix-util"
 import "./stats.aql"
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
 print ((Stats.col-means mat end)) end                  # => [4.0, 7.5]
@@ -290,5 +290,5 @@ All failures raise coded errors; catch with `do […] error […]` and read
 | `bad_payload` | `Stats.decode` text is not a `Stats.encode` snapshot |
 
 A missing `end` after a `Stats.*` call is not a module error but a
-general AQL dispatch problem — the word collects the following token
+general boru dispatch problem — the word collects the following token
 (add `end` or parens).

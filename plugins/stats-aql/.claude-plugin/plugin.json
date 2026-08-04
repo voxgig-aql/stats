@@ -2,9 +2,9 @@
   "name": "stats-aql",
   "description": "Agent guidance for calling the Stats statistics library correctly from AQL: the calling convention, the API with its List-or-Summary and mutation semantics, verified copy-paste idioms, and fixes for common mistakes.",
   "version": "0.1.0",
-  "author": { "name": "voxgig-aql" },
-  "homepage": "https://github.com/voxgig-aql/stats",
-  "repository": "https://github.com/voxgig-aql/stats",
+  "author": { "name": "voxgig-boru" },
+  "homepage": "https://github.com/voxgig-boru/stats",
+  "repository": "https://github.com/voxgig-boru/stats",
   "license": "MIT",
   "keywords": ["aql", "statistics", "stats", "skill", "agent"]
 }

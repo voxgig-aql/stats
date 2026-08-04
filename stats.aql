@@ -81,10 +81,10 @@
 # struct-util) — this module imports them itself.
 
 
-import "aql:math-util"
-import "aql:array-util"
-import "aql:matrix-util"
-import "aql:struct-util"
+import "boru:math-util"
+import "boru:array-util"
+import "boru:matrix-util"
+import "boru:struct-util"
 
 
 # --- type -----------------------------------------------------------

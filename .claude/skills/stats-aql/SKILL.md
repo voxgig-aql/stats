@@ -1,31 +1,31 @@
 ---
 name: stats-aql
-description: Use when writing or editing AQL code that calls the Stats statistics library — Stats.mean / variance / stddev / median / quantile / mode / skewness / kurtosis / covariance / correlation / linreg / normal-pdf / normal-cdf / zscores, the streaming Stats.summary accumulator (push / merge / encode / decode), or the matrix/dataset words (col-means / cov-matrix / cor-matrix / standardize / ols), or any file that does `import "./stats.aql"`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with its List-or-Summary and mutation semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `Stats.mean(xs)`, missing `end` terminators, calling order statistics on a Summary).
+description: Use when writing or editing boru code that calls the Stats statistics library — Stats.mean / variance / stddev / median / quantile / mode / skewness / kurtosis / covariance / correlation / linreg / normal-pdf / normal-cdf / zscores, the streaming Stats.summary accumulator (push / merge / encode / decode), or the matrix/dataset words (col-means / cov-matrix / cor-matrix / standardize / ols), or any file that does `import "./stats.aql"`. Provides the exact boru calling convention (which is not C/Python/JS), the API with its List-or-Summary and mutation semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `Stats.mean(xs)`, missing `end` terminators, calling order statistics on a Summary).
 ---
 
-# Calling the Stats statistics library (AQL)
+# Calling the Stats statistics library (boru)
 
 Descriptive, inferential, and matrix statistics. Public surface = the
 `Stats` namespace plus the `Summary` type. Everything below is verified
-against `aql @ 6185620` (main, with `aql:matrix-util`).
+against `boru @ 6185620` (main, with `boru:matrix-util`).
 
 ## Import
 
-```aql
+```boru
 import "./stats.aql"
 ```
 
 - Path resolves relative to the **working directory the script runs
   from**, not the importing file.
 - No `end` is needed after `import`.
-- The library imports its own deps (`aql:math-util`, `aql:array-util`,
-  `aql:matrix-util`, `aql:struct-util`). But if **you** build a `Matrix`
-  to pass to the dataset words, add `import "aql:matrix-util"` yourself —
+- The library imports its own deps (`boru:math-util`, `boru:array-util`,
+  `boru:matrix-util`, `boru:struct-util`). But if **you** build a `Matrix`
+  to pass to the dataset words, add `import "boru:matrix-util"` yourself —
   the library's import does not re-export the `MatrixUtil` binding.
 
 ## The one calling rule
 
-AQL has no `f(a, b)` and no `obj.method(a)`. A `Stats` call is written
+boru has no `f(a, b)` and no `obj.method(a)`. A `Stats` call is written
 **forward** — verb first, then the arguments — **terminated with `end`**
 (or wrapped in parens). Without a terminator the verb swallows the
 following token — wrong result or a dispatch error.
@@ -40,7 +40,7 @@ just the data, and it's the only/last arg anyway (`Stats.mean xs end`).
 For the streaming accumulator words the receiver is the `Summary`, so the
 value(s) come **first** and the `Summary` comes **last**:
 
-```aql
+```boru
 print ((Stats.mean   [1 2 3 4 5] end)) end          # => 3.0
 print ((Stats.median [2 4 4 4 5 5 7 9] end)) end     # => 4.5
 Stats.push 5 s end            # value first, accumulator s LAST
@@ -52,7 +52,7 @@ Receiver-last is what makes **piping** work too: because the `Summary`
 is the last param it also binds when it flows in from the **left**, so
 both of these are correct and identical —
 
-```aql
+```boru
 Stats.push 5 s end     # forward: value, then receiver
 s Stats.push 5 end     # piping:  receiver from the left, value forward
 ```
@@ -99,7 +99,7 @@ mismatch), `needs_data` (order statistic called on a Summary),
 
 ## Idioms (verified)
 
-```aql
+```boru
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
 print ((Stats.mean xs end))     end   # => 5.0
@@ -109,7 +109,7 @@ print ((Stats.median xs end))   end   # => 4.5
 
 Streaming accumulator — build once, query many; merge is O(1):
 
-```aql
+```boru
 def s (Stats.summary [] end)
 def _1 (Stats.push-all [1 2 3 4] s end)   # value(s) first, accumulator last
 def _2 (Stats.push 5 s end)               # or pipe: s Stats.push 5 end
@@ -124,8 +124,8 @@ def back (Stats.decode (Stats.encode m end) end)   # persist + reload
 
 Dataset (rows = observations, cols = variables):
 
-```aql
-import "aql:matrix-util"
+```boru
+import "boru:matrix-util"
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
 print ((Stats.col-means mat end)) end          # => [4.0 7.5]
 def cov (Stats.cov-matrix mat end)             # => Matrix(2x2)
@@ -135,14 +135,14 @@ def cov (Stats.cov-matrix mat end)             # => Matrix(2x2)
 
 | ✗ Don't | ✓ Do | Why |
 |---------|------|-----|
-| `Stats.mean(xs)` / `xs.mean()` | `Stats.mean xs end` | AQL has no call/method syntax. |
+| `Stats.mean(xs)` / `xs.mean()` | `Stats.mean xs end` | boru has no call/method syntax. |
 | `Stats.mean xs` mid-expression, no terminator | `Stats.mean xs end` | The verb swallows the next token. |
 | `Stats.push s x` / `Stats.merge a b` (receiver first) | `Stats.push x s` / `Stats.merge b a` (receiver **last**), or pipe `s Stats.push x` | Receiver-last convention: the `Summary` is the last arg. Receiver-first-all-forward silently swaps value & accumulator — no error, wrong moments. |
 | `Stats.median s end` on a Summary | pass the raw **List** | Order statistics need the data; a Summary raises `needs_data`. |
 | treat `Stats.variance` as population | `Stats.pvariance` for population | Bare `variance`/`stddev` are **sample** (n-1). |
 | keep a pre-`push` copy of a Summary | none — `push`/`merge` mutate in place | The argument and the return value are the same object. |
 | `xs get i` with a variable `i` | `xs get (i)` | Bare words after `get` are read as atom keys; parenthesise variable indices. |
-| build a Matrix without importing matrix-util | `import "aql:matrix-util"` in your script | The library's deps are not re-exported to callers. |
+| build a Matrix without importing matrix-util | `import "boru:matrix-util"` in your script | The library's deps are not re-exported to callers. |
 | `"label" print (v) print` | `print (v) end`, one per statement | `print` collects forward; chains print out of order. |
 
 ## By design (not bugs)
@@ -162,7 +162,7 @@ def cov (Stats.cov-matrix mat end)             # => Matrix(2x2)
   immutable; `flex {a: 1}` gives a Map you can `set` into. `Summary`
   itself is a sealed `class` — construct it only via `Stats.summary` and
   mutate only through `push`/`push-all`/`merge`.
-- **Integer overflow is fail-loud (intended).** AQL `Integer` is 63-bit
+- **Integer overflow is fail-loud (intended).** boru `Integer` is 63-bit
   and overflow **raises**, it does not wrap. Stats floats sums-of-squares
   up front (all moment math is `Float`) so large counts don't trip it —
   pass Floats if you're near the edge.
