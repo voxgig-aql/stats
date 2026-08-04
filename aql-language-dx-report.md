@@ -1,20 +1,20 @@
-# A developer-experience report on the AQL language
+# A developer-experience report on the boru language
 
 **Date:** 2026-06-25
-**Build under test:** `aql-lang/aql` @ `12a44e0`
+**Build under test:** `boru-lang/boru` @ `12a44e0`
 (`12a44e0c6ca3f49cd35a871b573fd96bc13d7fd6`, main as of 2026-06-24, PR
-#189; built locally with `GOFLAGS=-mod=mod`; `aql -version` reports
-`aql 12a44e0-main`).
+#189; built locally with `GOFLAGS=-mod=mod`; `boru -version` reports
+`boru 12a44e0-main`).
 **Vantage point:** writing one non-trivial library from scratch — the
 `Stats` statistics module in this repo: ~840 lines exporting one
 namespace and a class, with five test suites (example + property,
 imperative + declarative, plus a smoke run) that all pass across the
-interpreter, `aql check`, and the byte compiler. This is a *consumer's*
+interpreter, `boru check`, and the byte compiler. This is a *consumer's*
 view of the language, not a compiler-internals view.
 
 This report is the language-level companion to [`dx-report.md`](dx-report.md),
 which logs the specific runtime gotchas this module worked around. Here
-I step back: what AQL gets right, where it bites, and what would most
+I step back: what boru gets right, where it bites, and what would most
 improve the experience of writing real code in it.
 
 ## Update — 2026-07-11: re-evaluation against newer `main`
@@ -24,7 +24,7 @@ Re-ran this evaluation against the newest `main`, `0721e8280e01`
 
 **Fetching it was itself a DX story.** Midway through the session the
 sandbox's egress policy tightened: `github.com`, `api.github.com`, and
-`codeload.github.com` all began returning 403 for `aql-lang/aql`, and a
+`codeload.github.com` all began returning 403 for `boru-lang/boru`, and a
 per-owner `add_repo` is refused across owners. The one channel left open
 was the **Go module proxy** (`proxy.golang.org`, allowlisted). It served
 both the latest-commit pseudo-version (revealing `main` had moved) and
@@ -73,7 +73,7 @@ fixes above (`Matrix`→`Any`; every bare-atom `get k`→`get k/q`) and found
   default engine is the bytecode compiler** (there are `-no-check` /
   `AQL_NO_CHECK` and `-no-compile` / `AQL_NO_COMPILE` escapes). So a
   program that draws *any* check error no longer runs at all under a plain
-  `aql X`.
+  `boru X`.
 
 That last change turns the checker's `Any`-dispatch false positives (§5)
 from advisory noise into a hard blocker. With the matrix params forced to
@@ -89,10 +89,10 @@ under any default invocation without upstream fixes (the checker accepting
 
 So the migration is **blocked on the state of `main`, not on the
 library**. `0721e8` is a same-day tip mid-refactor; a bump also can't be
-gate-verified from here (the harness/hook/CI rebuild aql via
+gate-verified from here (the harness/hook/CI rebuild boru via
 git-clone/codeload, which this session's egress blocks). The library
 stays pinned to `12a44e0`, where all five suites remain green across
-interpreter, `aql check`, and the byte compiler; every finding below was
+interpreter, `boru check`, and the byte compiler; every finding below was
 re-confirmed on it. Revisit once `main` settles behind a tag — the
 descriptive-side migration is mechanical, but the matrix-side needs the
 upstream checker/compiler to stop choking on `Any`-typed matrix params.
@@ -105,12 +105,12 @@ workaround) · **🟢 low** (papercut).
 
 ## Verdict in one paragraph
 
-AQL is a structure-first, concatenative language with a genuinely
+boru is a structure-first, concatenative language with a genuinely
 unusual and genuinely valuable property: the same source is run three
 ways — interpreter, static checker, and byte compiler — and the
 toolchain *guarantees* the compiler never changes a program's meaning
 (it falls back to the interpreter rather than risk it). That contract is
-the best thing about developing in AQL, and it caught real divergences
+the best thing about developing in boru, and it caught real divergences
 for this module. The cost is a calling convention with several sharp
 edges that fail *silently* (wrong value, not an error) when you get them
 slightly wrong, and a static checker that is not yet trustworthy enough
@@ -121,25 +121,25 @@ debugging time that a clearer failure mode would have saved.
 
 ## What works well
 
-**The three-surface model is excellent.** `aql X` (interpret),
-`aql check X` (static type-check), and `aql --compile X` (byte-compile,
+**The three-surface model is excellent.** `boru X` (interpret),
+`boru check X` (static type-check), and `boru --compile X` (byte-compile,
 falling back to the interpreter for anything it can't lower) are framed
-as "opt-in performance, never semantics." `aql --force-compile X` tells
+as "opt-in performance, never semantics." `boru --force-compile X` tells
 you *how much* of a program the emitter can lower today, and refusals
 there are documented as always sound. Building a differential harness on
 top of this (`test/divergence/run.sh`) was straightforward and it earns
-its keep: it asserts `aql --compile X == aql X` on every suite, so a
+its keep: it asserts `boru --compile X == boru X` on every suite, so a
 compiler regression can't slip a wrong result past CI. Very few small
 languages give you this guarantee, let alone a CLI flag to measure
 coverage of it.
 
-**The module system is clean.** `import "aql:math-util"` binds a single
+**The module system is clean.** `import "boru:math-util"` binds a single
 namespace (`MathUtil`); a local library imports its own dependencies and
 exports one namespace via an auto-evaluating map literal, with `/r` to
 defer dispatch of the exported words. Re-export is *not* implicit, which
 is the right default (callers don't accidentally inherit a transitive
 binding) even though it surprised me once (a consumer building a `Matrix`
-must import `aql:matrix-util` itself).
+must import `boru:matrix-util` itself).
 
 **The error model is good.** `raise code message` with template-literal
 messages, caught by `do […] error […]` with `e get code` / `e get
@@ -147,7 +147,7 @@ message`, is ergonomic and reads well. Coding the four failure modes of
 this library (`bad_input`, `needs_data`, `singular`, `bad_payload`) and
 asserting them in tests was painless.
 
-**The numeric surface is real.** `aql:math-util` carries a full
+**The numeric surface is real.** `boru:math-util` carries a full
 IEEE-754-aware vocabulary — `sqrt`/`log`/`exp`, the rounding family,
 `fma`, `hypot`, `nextafter`, `copysign`, NaN/inf classifiers, and
 order-independent NaN-ignoring `min`/`max`. Integer overflow is a *hard
@@ -156,14 +156,14 @@ float-up sums of squares deliberately rather than discover a wrap in
 production.
 
 **The test framework is unusually complete for a small language.**
-`aql:test` ships both an imperative surface (`Test.test`,
+`boru:test` ships both an imperative surface (`Test.test`,
 `Test.check-prop`) and a declarative one (`Test.run-spec`,
 `Test.run-property`), property-based testing with shrinking, a frozen
 clock for determinism, and result records you can iterate. I was able to
 write example-based and property-based suites in both styles without
 reaching outside the stdlib.
 
-**Small niceties that add up:** `aql -version` stamps the git commit (so
+**Small niceties that add up:** `boru -version` stamps the git commit (so
 "which build am I on?" answers itself); `MathUtil.floor`/`ceil` on a
 Float return an `Integer`, usable directly as a list index; the
 `describe`/docs surface is generated and complete.
@@ -172,7 +172,7 @@ Float return an `Integer`, usable directly as a list index; the
 
 ## Friction and sharp edges
 
-The through-line: AQL's worst failures are **silent**. Because the
+The through-line: boru's worst failures are **silent**. Because the
 calling convention is positional and token-collecting, a small mistake
 often yields a *wrong value* or a `None` that fails three lines later,
 rather than an error at the call site. Each of these cost real debugging
@@ -184,7 +184,7 @@ The sharpest bug I hit is reproducible and looks like a frame-cleanup
 over-pop: a user function that calls a higher-order helper via `comp/r`
 **twice** loses an enclosing binding after the first call.
 
-```aql
+```boru
 def g ([x:Integer] => [x add 1])
 def h fn [[comp:Function v:Integer] [Integer] [v comp/r apply]]
 def t fn [[comp:Function] [Integer] [
@@ -199,7 +199,7 @@ print ((g/r t)) end          # expected 13
 A single call works (`def t … [ def a (5 comp/r h) a ]` returns `6`);
 the second call to a `comp/r`-using helper has popped `comp` out of
 `t`'s frame. (This matches what `design/ACCESSOR-SPLIT-AND-CLEANUP-BUG.md`
-in the aql repo describes.) It's loud *here*, but a frame-cleanup
+in the boru repo describes.) It's loud *here*, but a frame-cleanup
 over-pop is the kind of defect that can equally surface as a wrong value;
 either way it makes higher-order code that re-invokes a captured function
 unreliable. This is the one finding I'd fix first.
@@ -210,7 +210,7 @@ The index/key argument to `get`/`set` is taken literally, so a bare
 *variable* is read as the atom of its name, not its value — and on a List
 that yields `None`, not an error:
 
-```aql
+```boru
 def s [10.0 20.0 30.0]
 def i 1
 s get 1     # => 20.0   (literal index works)
@@ -227,7 +227,7 @@ should be a dispatch error at the `get`, not a silent `None`.
 The bracketed-value form evaluates only when the literal is prefixed
 with `do`; a bare `{…}` stores the brackets as a literal List:
 
-```aql
+```boru
 def v 23.0
 def a {best: [v]}        # a.best == [23.0]   (a one-element List!)
 def b (do {best: [v]})   # b.best == 23.0     (evaluated)
@@ -240,7 +240,7 @@ identical while meaning different things is the trap.
 
 ### 4. 🟡 Forward-argument order is surprising for native multi-arg words
 
-Two `aql:matrix-util` words bind their forward operands in an order that
+Two `boru:matrix-util` words bind their forward operands in an order that
 inverts the natural reading:
 
 - `MatrixUtil.mat-mul A B` computes **B·A**, not A·B (verified by shape:
@@ -255,7 +255,7 @@ order down against known answers. Consistent left-to-right operand
 binding (or at least a loud shape error) would remove a whole class of
 mistake.
 
-### 5. 🟡 `aql check` is not yet trustworthy enough to gate on
+### 5. 🟡 `boru check` is not yet trustworthy enough to gate on
 
 The checker reports *hard errors* for code that runs correctly,
 especially around gradual `Any`. A query word typed `[x:Any]` that
@@ -265,7 +265,7 @@ depending on which arm of a union the value provably is. The shape that
 finally type-checked clean in both directions needed a union parameter
 *and* narrowing on the **positive** branch:
 
-```aql
+```boru
 def as-summary fn [
   [x:(List tor Summary)] [Summary] [
     if (x is List) [build-summary x] [x]   # `is List`; `is Summary`-negative still errored
@@ -275,18 +275,18 @@ def as-summary fn [
 
 There's also a typing quirk where an empty-list literal `[]` flowing
 into such a word poisons the inferred type at top level (but not inside
-an opaque `Test.test`/`each` body). The net effect: `aql check` on a
+an opaque `Test.test`/`each` body). The net effect: `boru check` on a
 library *in isolation* still surfaces false `unused_def` (export-by-
 reference hides use sites) and `no_signature` findings, so it can't be a
 gate by itself. The workable pattern — which this repo's CI uses — is to
-gate on `aql check` *through the test suites* (where words are called
+gate on `boru check` *through the test suites* (where words are called
 with concrete types) and treat the standalone check as advisory. That
 works, but "the static checker is advisory" is a tax on a language whose
 other surfaces are so disciplined.
 
 ### 6. 🟡 No tagged release; `go install` doesn't work
 
-AQL has no tagged release, and the documented `go install
+boru has no tagged release, and the documented `go install
 …/cmd/go/aql@latest` can't run while `cmd/go/go.mod` carries replace
 directives. Every consumer must build from a pinned commit. That's
 workable (this repo pins one commit across the hook, CI, and the
@@ -313,7 +313,7 @@ entrypoint, or prebuilt binaries, would dramatically lower the barrier.
 
 ## Tooling and build experience
 
-- **Build:** `GOFLAGS=-mod=mod go build ./aql` from `cmd/go` is reliable.
+- **Build:** `GOFLAGS=-mod=mod go build ./boru` from `cmd/go` is reliable.
   Fetching the source as a codeload tarball (`curl … | tar -xz`) is more
   robust than `git clone` in locked-down sandboxes that allow the API/
   codeload hosts but block the raw git host — both this repo's
@@ -324,7 +324,7 @@ entrypoint, or prebuilt binaries, would dramatically lower the barrier.
   the real fix. This is one of the best parts of the day-to-day loop and
   partly compensates for the silent-failure modes above (once a wrong
   value finally does error, the message is usually actionable).
-- **Determinism:** the frozen spec clock and seeded `aql:rand` made
+- **Determinism:** the frozen spec clock and seeded `boru:rand` made
   property tests reproducible with explicit run/seed/shrink counts. Good.
 
 ---
@@ -338,7 +338,7 @@ entrypoint, or prebuilt binaries, would dramatically lower the barrier.
    via `get` (§2) should raise, not return `None`; a wrong-shape
    `mat-mul` (§4) should raise a shape error. Silent wrong values are the
    single biggest time sink.
-3. **Get `aql check` to zero false errors on a library in isolation
+3. **Get `boru check` to zero false errors on a library in isolation
    (§5).** Treat the export map as a use site (kills false `unused_def`);
    accept gradual `Any` into typed dispatch without a hard `no_signature`;
    narrow `is`-guards symmetrically. Until then, document clearly that
@@ -362,11 +362,11 @@ language's own discipline elsewhere makes feel avoidable.
 | 2 | 🔴→✅ | `get`/`set` read a bare variable index as an atom (silent `None`) — **fixed on `main` @ 0721e8** (2026-07-11 update) | parenthesise variable indices: `xs get (i)` |
 | 3 | 🔴 | `{k: [expr]}` map value only evaluates under `do` | build such maps with `do {…}` |
 | 4 | 🟡 | native multi-arg operand order surprising (`mat-mul` is B·A; `elem` is col,row) | verify against a known value; prefer `row`/`col` over `elem` |
-| 5 | 🟡 | `aql check` reports false hard errors on a library in isolation | gate on `check` *through* the suites; standalone is advisory |
+| 5 | 🟡 | `boru check` reports false hard errors on a library in isolation | gate on `check` *through* the suites; standalone is advisory |
 | 6 | 🟡 | no tagged release; `go install` blocked by replace directives | pin a commit; build from a codeload tarball |
 | 7 | 🟢 | `print` chains reverse; 1-letter uppercase = type var; parse collapses `42.0`→`42`; List print comma vs space | one `print` per statement; lowercase value names; coerce on decode |
 
-Overall: AQL is a pleasure to verify in and a hazard to mistype in. Close
+Overall: boru is a pleasure to verify in and a hazard to mistype in. Close
 the silent-failure gaps and make the checker gate-worthy, and the
 day-to-day experience would match the quality of its execution-surface
 guarantees.

@@ -1,4 +1,4 @@
-# stats direct unit tests using aql:test's imperative API.
+# stats direct unit tests using boru:test's imperative API.
 #
 # The sibling file `test/stats_unit_spec.aql` covers the same kind of
 # example-based checks through the declarative spec surface
@@ -12,9 +12,9 @@
 #   aql test/stats_unit_test.aql
 
 
-import "aql:test" end
-import "aql:math-util" end
-import "aql:matrix-util" end
+import "boru:test" end
+import "boru:math-util" end
+import "boru:matrix-util" end
 import "./stats.aql" end
 
 

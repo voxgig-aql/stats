@@ -1,6 +1,6 @@
 # Property-based tests for stats — DIRECT-CODE FORM.
 #
-# This file exercises one of aql:test's two property-test surfaces: the
+# This file exercises one of boru:test's two property-test surfaces: the
 # imperative `Test.check-prop` driver, called directly with explicit
 # run / seed / shrink counts —
 #
@@ -17,9 +17,9 @@
 #   aql test/stats_prop_test.aql
 
 
-import "aql:test" end
-import "aql:math-util" end
-import "aql:array-util" end
+import "boru:test" end
+import "boru:math-util" end
+import "boru:array-util" end
 import "./stats.aql" end
 
 

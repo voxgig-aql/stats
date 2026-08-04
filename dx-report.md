@@ -1,15 +1,15 @@
-# Developer-experience report: stats on AQL
+# Developer-experience report: stats on boru
 
 **Date:** 2026-06-25
-**AQL build under test:** `aql-lang/aql` @ `12a44e0`
+**boru build under test:** `boru-lang/boru` @ `12a44e0`
 (`12a44e0c6ca3f49cd35a871b573fd96bc13d7fd6`, main as of 2026-06-24, PR
-#189; built locally with `GOFLAGS=-mod=mod`; `aql -version` reports
-`aql 12a44e0-main`).
+#189; built locally with `GOFLAGS=-mod=mod`; `boru -version` reports
+`boru 12a44e0-main`).
 **Context:** gotchas hit while building this statistics library — a new
-module exercising `aql:matrix-util`, `aql:math-util`, the numeric types,
+module exercising `boru:matrix-util`, `boru:math-util`, the numeric types,
 classes, and `do`/`error` against this build. All five suites
-(`stats_*`) pass on it across the interpreter, `aql check` (0 errors),
-and `aql --compile` (identical to the interpreter), enforced by
+(`stats_*`) pass on it across the interpreter, `boru check` (0 errors),
+and `boru --compile` (identical to the interpreter), enforced by
 `test/divergence/run.sh`.
 
 Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
@@ -17,10 +17,10 @@ Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
 
 ---
 
-## Update (DX-driven aql fixes)
+## Update (DX-driven boru fixes)
 
-**2026-06-25.** This module was migrated to aql HEAD's new accessor
-semantics and verified against a local aql build that carries three
+**2026-06-25.** This module was migrated to boru HEAD's new accessor
+semantics and verified against a local boru build that carries three
 upstream fixes (comp/r frame over-pop, StructUtil.parse float-fidelity,
 and a checker `no_signature` fix). `get`/`getr` now *evaluate* their key,
 so the literal bare-word field reads this library used — `(as-summary x)
@@ -33,8 +33,8 @@ StructUtil.parse float-fidelity fix makes whole-valued Float moments
 round-trip as Float (`8.0`, not `8`), the per-field `convert Float`
 coercion that `Stats.decode` carried as the §5 workaround was removed and
 the encode/decode round-trip stays green without it. All five `stats_*`
-suites are green and `aql check` reports 0 errors on the module and on
-each suite; this requires an aql build carrying these fixes — on older
+suites are green and `boru check` reports 0 errors on the module and on
+each suite; this requires an boru build carrying these fixes — on older
 builds the bare-word reads raise `undefined_word` and decode loses Float
 type on whole-valued moments.
 
@@ -48,7 +48,7 @@ there is treated as an atom (a field name), not evaluated as a variable.
 With a literal integer it works; with a variable it silently returns
 `None`:
 
-```aql
+```boru
 def s [10.0 20.0 30.0 40.0]
 def i 1
 s get 1     # => 20.0   (literal index: fine)
@@ -73,7 +73,7 @@ The bracketed-value form in a map literal is evaluated **only** when the
 literal is prefixed with `do`. A bare `{…}` stores the brackets as a
 literal List:
 
-```aql
+```boru
 def v 23.0
 def a {best: [v]}        #  a.best == [23.0]   (a one-element List!)
 def b (do {best: [v]})   #  b.best == 23.0     (evaluated)
@@ -93,7 +93,7 @@ bloom module only ever used `do {…}`, so it never saw this.)
 The two forward operands of `mat-mul` bind in reverse of the natural
 reading order, so `mat-mul A B` is the product **B·A**, not A·B:
 
-```aql
+```boru
 def amat (MatrixUtil.create [[1 2 3] [4 5 6]])   # 2x3
 def bmat (MatrixUtil.create [[1 0] [0 1] [1 1]]) # 3x2
 MatrixUtil.mat-mul amat bmat   # => Matrix(3x3) — i.e. bmat·amat, not amat·bmat
@@ -126,7 +126,7 @@ never hit this; its one Float, `p`, happened to be non-integral.)
 
 ---
 
-## 6. 🟡 `aql check` mis-reports `Any`→typed dispatch as a hard error
+## 6. 🟡 `boru check` mis-reports `Any`→typed dispatch as a hard error
 
 A query word typed `[x:Any]` that dispatches `x` to a `List`-typed word
 draws `no_signature: no matching signature …` — a hard **error**, not a
@@ -137,7 +137,7 @@ is provably a `List`, and errors when `x` is provably the *other* arm
 directions: give the coercion helper a **union** param and narrow on the
 **positive** branch —
 
-```aql
+```boru
 def as-summary fn [
   [x:(List tor Summary)] [Summary] [
     if (x is List) [build-summary x] [x]   # `is List` (not `is Summary`) narrows cleanly
@@ -147,7 +147,7 @@ def as-summary fn [
 
 `if (x is Summary) [x] [build-summary x]` (negative-branch narrowing)
 still errored; flipping to the positive `is List` test fixed it. This is
-the same class of `aql check` false-positive the bloom report noted
+the same class of `boru check` false-positive the bloom report noted
 (export-by-reference hides use sites); checked *through* a suite the
 words type-check, which is what the gating `divergence` job asserts.
 
@@ -159,7 +159,7 @@ draws the §6 `no_signature` error, while `[1 2 3] Stats.summary` then
 checker can't carry it through the union param. It is invisible inside a
 `Test.test`/`each` body (those are opaque to the checker), so only
 top-level scripts see it. The empty constructor *runs* fine; the smoke
-test simply seeds from non-empty data to keep `aql check` at 0 errors.
+test simply seeds from non-empty data to keep `boru check` at 0 errors.
 
 ## 8. 🟢 single uppercase identifiers are parsed as type variables
 
@@ -181,7 +181,7 @@ the one-value-per-statement idiom `print (value) end`.
 - **`MathUtil.floor`/`ceil` return `Integer` when applied to a Float**
   (`6.3 MathUtil.floor` ⇒ `6`, an Integer), so the result is directly
   usable as a list index — convenient for the quantile interpolation.
-- **`aql:matrix-util` has no inverse/solve.** `mat-mul`, `transpose`,
+- **`boru:matrix-util` has no inverse/solve.** `mat-mul`, `transpose`,
   `det`, `dot`, `scale`, and the accessors are enough for covariance and
   correlation matrices, but OLS needs a linear solve, so this module
   ships a small Gaussian-elimination solver (partial pivoting) over
@@ -202,8 +202,8 @@ the one-value-per-statement idiom `print (value) end`.
 | 3 | 🟡 | `mat-mul X Y` is `Y·X` (silent wrong shape) | write `mat-mul X (transpose X)` for `XᵀX` |
 | 4 | 🟡 | `MatrixUtil.elem` is `(col, row)` | use `MatrixUtil.row` + List indexing |
 | 5 | 🟡 | `StructUtil.parse` collapses `42.0` → Integer | coerce field types on decode |
-| 6 | 🟡 | `aql check` flags `Any`→typed dispatch as an error | union param + positive `is List` narrowing |
-| 7 | 🟢 | empty `[]` literal poisons top-level query types in `aql check` | seed from non-empty data in checked scripts |
+| 6 | 🟡 | `boru check` flags `Any`→typed dispatch as an error | union param + positive `is List` narrowing |
+| 7 | 🟢 | empty `[]` literal poisons top-level query types in `boru check` | seed from non-empty data in checked scripts |
 | 8 | 🟢 | one-letter uppercase names parse as type variables | bind values to lowercase names |
 | 9 | 🟢 | `print` forward-collection reverses chains | one `print (value) end` per statement |
 
@@ -232,7 +232,7 @@ What changes when the pin is eventually bumped:
   become `[mat:Any]`.
 - **New: `Array` removed** (→ `FlexList`); the OLS solver's `make Array`
   becomes `make FlexList`, and its `convert List` becomes an `each`.
-- **New: execution is check-gated and compiles by default.** `aql X` now
+- **New: execution is check-gated and compiles by default.** `boru X` now
   refuses to run if the pre-flight check reports any error (`-no-check`
   escapes), and the default engine is the byte compiler (`-no-compile`
   escapes).
@@ -250,4 +250,4 @@ module. The pin therefore stays at `12a44e0` — see
 for the full attempt. Revisit once `main` settles behind a tag.
 
 All nine findings above still reproduce on `12a44e0`, where every suite
-stays green across the interpreter, `aql check`, and the byte compiler.
+stays green across the interpreter, `boru check`, and the byte compiler.

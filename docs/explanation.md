@@ -66,7 +66,7 @@ and raise `needs_data` on a Summary. The same snapshot is exactly what
 `encode`/`decode` serialise, which is why a decoded Summary is also
 "order-statistic blind".
 
-All the moment arithmetic is done in Float on purpose: AQL Integer
+All the moment arithmetic is done in Float on purpose: boru Integer
 overflow is a *hard error*, not a silent wraparound, so sums of squares
 are floated up front to keep large datasets from blowing up.
 
@@ -140,7 +140,7 @@ system for `b`. There is no intercept term unless you ask for one:
 the intercept.
 
 The solve is **Gaussian elimination with partial pivoting**, written
-directly in `stats.aql`. This is deliberate: `aql:matrix-util` offers a
+directly in `stats.aql`. This is deliberate: `boru:matrix-util` offers a
 matrix multiply and transpose but **no matrix inverse**, so the library
 cannot lean on `b = (XᵀX)⁻¹ Xᵀy`. Solving the system by elimination is
 both more direct and numerically better than forming an explicit

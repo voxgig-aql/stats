@@ -1,12 +1,12 @@
 # stats
 
 A **statistics library** implemented in
-[AQL](https://github.com/aql-lang/aql) — descriptive, inferential, and
+[boru](https://github.com/boru-lang/boru) — descriptive, inferential, and
 matrix statistics behind a single `Stats` namespace, plus a streaming
-`Summary` accumulator. It builds on AQL's numeric types and the
-`aql:matrix-util` / `aql:math-util` modules.
+`Summary` accumulator. It builds on boru's numeric types and the
+`boru:matrix-util` / `boru:math-util` modules.
 
-```aql
+```boru
 import "./stats.aql"
 
 def xs [2 4 4 4 5 5 7 9]
@@ -16,7 +16,7 @@ print ((Stats.stddev xs end)) end   # => 2.138089935299395  (sample)
 ```
 
 > **Calling this library from an AI coding agent?** Read
-> **[AGENTS.md](AGENTS.md)** first — the exact AQL calling convention,
+> **[AGENTS.md](AGENTS.md)** first — the exact boru calling convention,
 > verified idioms, and common mistakes. (Claude Code auto-loads it via
 > `CLAUDE.md`; a portable skill lives in
 > [`.claude/skills/stats-aql`](.claude/skills/stats-aql/SKILL.md).)
@@ -26,7 +26,7 @@ print ((Stats.stddev xs end)) end   # => 2.138089935299395  (sample)
 **Pure functions over a List** — the simplest path, and the only way to
 get order statistics:
 
-```aql
+```boru
 print ((Stats.variance [1 2 3 4 5] end)) end       # => 2.5 (sample)
 print ((Stats.quantile [1 2 3 4 5] 0.9 end)) end   # => 4.6
 ```
@@ -35,14 +35,14 @@ print ((Stats.quantile [1 2 3 4 5] 0.9 end)) end   # => 4.6
 mean/variance/skewness/kurtosis cost one pass and two summaries merge in
 O(1) (ideal for parallel or streaming aggregation):
 
-```aql
+```boru
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
 def merged (Stats.merge b a end)
 print ((Stats.mean merged end)) end                # => 4.5
 ```
 
-The dataset words operate on an `aql:matrix-util` Matrix (rows =
+The dataset words operate on an `boru:matrix-util` Matrix (rows =
 observations, columns = variables) — column means, covariance and
 correlation matrices, standardization, and ordinary least squares.
 
@@ -79,7 +79,7 @@ Every call is verb-first and ends with `end`:
 ## For AI coding agents
 
 If an agent will call this library, point it at **[AGENTS.md](AGENTS.md)**
-— the exact AQL calling convention, verified idioms, and the common
+— the exact boru calling convention, verified idioms, and the common
 mistakes to avoid.
 
 To make that guidance available in *another* project that uses this
@@ -92,8 +92,8 @@ library, install the bundled skill either way:
 - **Install the plugin** — this repo is also a plugin marketplace:
 
   ```
-  /plugin marketplace add voxgig-aql/stats
-  /plugin install stats-aql@voxgig-aql
+  /plugin marketplace add voxgig-boru/stats
+  /plugin install stats-aql@voxgig-boru
   ```
 
 Working inside *this* repo, Claude Code picks the guidance up
@@ -111,7 +111,7 @@ test/stats_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/stats_prop_spec.aql   property-based tests — declarative spec format
 test/stats_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      documentation (above)
-dx-report.md               developer-experience notes (current pin: aql @ 6185620)
+dx-report.md               developer-experience notes (current pin: boru @ 6185620)
 proposals/                 language proposals raised from this module's DX
 ```
 
@@ -121,21 +121,21 @@ or property).
 
 ## Running it
 
-Build the `aql` interpreter, then run any script or test — see
+Build the `boru` interpreter, then run any script or test — see
 [How-to → Install and run](docs/how-to.md#install-and-run-aql) and
 [Run the tests](docs/how-to.md#run-the-tests):
 
 ```bash
-aql test/stats_unit_test.aql   # unit tests — direct
-aql test/stats_unit_spec.aql   # unit tests — declarative spec format
-aql test/stats_prop_test.aql   # property tests — direct
-aql test/stats_prop_spec.aql   # property tests — declarative spec format
-aql test/stats_smoke_test.aql  # end-to-end smoke run
+boru test/stats_unit_test.aql   # unit tests — direct
+boru test/stats_unit_spec.aql   # unit tests — declarative spec format
+boru test/stats_prop_test.aql   # property tests — direct
+boru test/stats_prop_spec.aql   # property tests — declarative spec format
+boru test/stats_smoke_test.aql  # end-to-end smoke run
 ```
 
 A GitHub Actions workflow
-([`.github/workflows/test.yml`](.github/workflows/test.yml)) builds aql from a
-pinned commit and runs every suite through the interpreter, `aql check`, and
+([`.github/workflows/test.yml`](.github/workflows/test.yml)) builds boru from a
+pinned commit and runs every suite through the interpreter, `boru check`, and
 the byte compiler — plus a `consistency` job (agent-skill drift, JSON
 manifests, and a pinned-ref guard) — on each push and pull request.
 

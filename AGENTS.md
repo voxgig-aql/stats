@@ -1,8 +1,8 @@
 # AGENTS.md — using the `Stats` library
 
 Guidance for an AI coding agent calling this statistics library from an
-AQL project. Every code block below is verified to run against
-`aql-lang/aql` @ `6185620` (main, which ships `aql:matrix-util`). If you
+boru project. Every code block below is verified to run against
+`boru-lang/boru` @ `6185620` (main, which ships `boru:matrix-util`). If you
 read nothing else, read [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 
@@ -18,12 +18,12 @@ the `Stats` namespace plus the `Summary` type. There are two ways in:
   (Welford/Pébay), so mean/variance/skewness/kurtosis cost one pass and a
   merge is O(1). The same descriptive words read a `Summary` directly.
 
-The **dataset** words take an `aql:matrix-util` `Matrix` whose rows are
+The **dataset** words take an `boru:matrix-util` `Matrix` whose rows are
 observations and columns are variables.
 
 ## Import
 
-```aql
+```boru
 import "./stats.aql"
 ```
 
@@ -31,15 +31,15 @@ import "./stats.aql"
   run from**, not relative to the importing file.
 - No `end` is needed after `import` on this build (a trailing `end` is
   harmless).
-- Do **not** import `aql:math-util`, `aql:array-util`, `aql:matrix-util`,
-  or `aql:struct-util` for the library's sake — `stats.aql` imports its
+- Do **not** import `boru:math-util`, `boru:array-util`, `boru:matrix-util`,
+  or `boru:struct-util` for the library's sake — `stats.aql` imports its
   own dependencies. **But** if *you* construct a `Matrix` to pass to the
-  dataset words, add `import "aql:matrix-util"` to **your** script: the
+  dataset words, add `import "boru:matrix-util"` to **your** script: the
   library's import does not re-export the `MatrixUtil` binding to callers.
 
 ## The one calling rule
 
-AQL is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
+boru is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
 A `Stats` call is written **forward** — the verb first, then the
 arguments — with the **receiver last**:
 
@@ -56,7 +56,7 @@ or a dispatch error.
 For the pure words the receiver is just the data, and it's the only/last
 arg anyway:
 
-```aql
+```boru
 def xs [2 4 4 4 5 5 7 9]
 print ((Stats.mean   xs end)) end    # => 5.0
 print ((Stats.median xs end)) end    # => 4.5
@@ -163,7 +163,7 @@ mismatched lengths), `needs_data` (an order-statistic word called on a
 
 Descriptive statistics over a List:
 
-```aql
+```boru
 import "./stats.aql"
 def xs [2 4 4 4 5 5 7 9]
 print ((Stats.mean     xs end)) end   # => 5.0
@@ -174,7 +174,7 @@ print ((Stats.quantile xs 0.9 end)) end   # => 7.6
 
 The streaming accumulator — build, push, query:
 
-```aql
+```boru
 def s (Stats.summary [1 2 3 4] end)
 def _ (Stats.push-all [5 6 7 8] s end)
 def _2 (Stats.push 9 s end)
@@ -185,7 +185,7 @@ print ((Stats.mean  s end)) end       # => 5.0
 Merge is O(1) and gives the same answer as pooling the data — useful for
 parallel/streaming aggregation:
 
-```aql
+```boru
 def a (Stats.summary [1 2 3 4] end)
 def b (Stats.summary [5 6 7 8] end)
 def merged (Stats.merge b a end)
@@ -195,7 +195,7 @@ print ((Stats.variance merged end)) end   # => 6.0
 
 Persist and reload a Summary through the snapshot string:
 
-```aql
+```boru
 def snap (Stats.encode merged end)
 def back (Stats.decode snap end)
 print ((Stats.mean back end)) end          # => 4.5
@@ -203,7 +203,7 @@ print ((Stats.mean back end)) end          # => 4.5
 
 Bivariate and regression:
 
-```aql
+```boru
 def x [1 2 3 4 5]
 def y [2 4 5 4 5]
 print ((Stats.correlation x y end)) end    # => 0.7745966692414834
@@ -214,8 +214,8 @@ print ((lr get intercept)) end             # => 2.2
 
 Dataset statistics over a Matrix (import matrix-util yourself):
 
-```aql
-import "aql:matrix-util"
+```boru
+import "boru:matrix-util"
 import "./stats.aql"
 def mat (MatrixUtil.create [[1 2] [3 6] [5 10] [7 12]])
 print ((Stats.col-means mat end)) end      # => [4.0 7.5]
@@ -225,8 +225,8 @@ def cov (Stats.cov-matrix mat end)         # => Matrix(2x2)
 Multiple linear regression via OLS (prepend a 1s column for the
 intercept):
 
-```aql
-import "aql:matrix-util"
+```boru
+import "boru:matrix-util"
 import "./stats.aql"
 def design (MatrixUtil.create [[1 1] [1 2] [1 3] [1 4]])
 def coef (Stats.ols design [2 3 5 8] end)
@@ -235,7 +235,7 @@ print (coef) end                           # => [-0.5 2.0]  (intercept, slope)
 
 Guard a misuse (an order statistic on a Summary raises `needs_data`):
 
-```aql
+```boru
 def s (Stats.summary [1 2 3] end)
 def code (do [Stats.median s end] error [ get code ])
 print (code) end                           # => needs_data
@@ -245,14 +245,14 @@ print (code) end                           # => needs_data
 
 | ✗ Don't write | ✓ Write | Why |
 |---------------|---------|-----|
-| `Stats.mean(xs)` | `Stats.mean xs end` | No `f(a,b)` syntax in AQL. |
+| `Stats.mean(xs)` | `Stats.mean xs end` | No `f(a,b)` syntax in boru. |
 | `xs.mean()` | `Stats.mean xs end` | No method-call syntax. |
 | `Stats.mean xs` (no terminator, mid-expression) | `Stats.mean xs end` | The verb swallows the next token without `end`/parens. |
 | `Stats.median s end` on a Summary | pass the raw **List** to `median` | Order statistics need the data; a `Summary` raises `needs_data`. |
 | treat `Stats.variance` as population variance | `Stats.pvariance` for population | Bare `variance`/`stddev` are **sample** (n-1). |
 | keep a pre-`push` copy of a Summary as "before" | `push`/`merge` mutate in place | The argument and the returned value are the **same** object. |
 | `xs get i` with a variable `i` | `xs get (i)` | A bare word after `get` is read as an atom key; parenthesise variable indices. |
-| call the dataset words without `import "aql:matrix-util"` in your script | add the import yourself | The library's deps are not re-exported to callers. |
+| call the dataset words without `import "boru:matrix-util"` in your script | add the import yourself | The library's deps are not re-exported to callers. |
 | `make Summary {…}` | `Stats.summary xs end` | Construct only via `Stats.summary`. |
 | `"label" print (v) print` | `print (value) end`, one per statement | `print` collects a forward argument; chains print out of order. |
 
@@ -263,4 +263,4 @@ print (code) end                           # => needs_data
 - `docs/how-to.md` — task recipes (summarise, merge, regress, persist).
 - `docs/tutorial.md` — a guided first session.
 - `test/stats_smoke_test.aql` — a complete, runnable worked example.
-- `dx-report.md` — AQL-runtime gotchas observed while building this module.
+- `dx-report.md` — boru-runtime gotchas observed while building this module.

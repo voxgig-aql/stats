@@ -1,11 +1,11 @@
 # Tutorial: your first statistics session
 
-This is a hands-on lesson. By the end you will have built a small AQL
+This is a hands-on lesson. By the end you will have built a small boru
 script that summarises a column of numbers, reads its centre and spread,
 streams data through a running accumulator, merges two of them, and
 finishes with a tiny dataset and a correlation. You need no prior
 statistics beyond what "mean" and "standard deviation" mean — just a
-working `aql` binary (see
+working `boru` binary (see
 [How-to → Install and run](how-to.md#install-and-run-aql)) and this
 repository checked out.
 
@@ -21,7 +21,7 @@ build it up in pieces and run it after each step.
 
 Create a file `explore.aql` next to `stats.aql` with this content:
 
-```aql
+```boru
 import "./stats.aql"
 
 # Print one value per statement, fully grouped — `print (value) end` —
@@ -41,14 +41,14 @@ the whole calling convention — the verb comes first, no `f(x)` and no
 `x.f()`. Run it:
 
 ```console
-$ aql explore.aql
+$ boru explore.aql
 count: 8
 mean:  5.0
 min:   2.0
 max:   9.0
 ```
 
-Note the `end` after each call. AQL words look ahead for arguments, and
+Note the `end` after each call. boru words look ahead for arguments, and
 `end` marks where the call stops; forget it and the next token gets
 swallowed as an argument. (Inputs may be Integer or Float; results come
 back as Float, except `count`, which is an Integer.)
@@ -61,7 +61,7 @@ A mean alone doesn't tell you how spread out the data is. Add the
 median (the middle value) and the standard deviation (typical distance
 from the mean). Append below:
 
-```aql
+```boru
 print (`median: ${(Stats.median data end)}`) end
 print (`stddev: ${(Stats.stddev data end)}`) end
 print (`iqr:    ${(Stats.iqr data end)}`) end
@@ -70,7 +70,7 @@ print (`iqr:    ${(Stats.iqr data end)}`) end
 Run the whole file:
 
 ```console
-$ aql explore.aql
+$ boru explore.aql
 count: 8
 mean:  5.0
 min:   2.0
@@ -98,14 +98,14 @@ holds running moments and answers any descriptive query in one pass.
 
 Add this to the file:
 
-```aql
+```boru
 def s (Stats.summary [2 4 4 4] end)
 def _1 (Stats.push-all [5 5 7 9] s end)
 print (`mean: ${(Stats.mean s end)} n: ${(Stats.count s end)}`) end
 ```
 
 ```console
-$ aql explore.aql
+$ boru explore.aql
 ...
 mean: 5.0 n: 8
 ```
@@ -123,7 +123,7 @@ Summary just as happily as a List.
 Because a Summary stores moments rather than the raw data, two of them
 combine in constant time — no re-reading the inputs. Build two and merge:
 
-```aql
+```boru
 def a (Stats.summary [2 4 4 4] end)
 def b (Stats.summary [5 5 7 9] end)
 def _m (Stats.merge b a end)
@@ -131,7 +131,7 @@ print (`merged mean: ${(Stats.mean a end)} merged stddev: ${(Stats.stddev a end)
 ```
 
 ```console
-$ aql explore.aql
+$ boru explore.aql
 ...
 merged mean: 5.0 merged stddev: 2.138089935299395
 ```
@@ -151,8 +151,8 @@ Real questions are usually about how *two* variables move together.
 Stats has bivariate words over a pair of Lists, and dataset words over a
 whole matrix. Create a second file `relate.aql`:
 
-```aql
-import "aql:matrix-util"
+```boru
+import "boru:matrix-util"
 import "./stats.aql"
 
 def xs [1 2 3 4 5]
@@ -165,7 +165,7 @@ print (`col-means: ${(Stats.col-means mat end)}`) end
 ```
 
 ```console
-$ aql relate.aql
+$ boru relate.aql
 correlation: 0.7745966692414833
 linreg:      {intercept:2.2 r:0.7745966692414834 r2:0.6000000000000001 slope:0.6}
 col-means: [4.0 7.5]
@@ -175,7 +175,7 @@ col-means: [4.0 7.5]
 straight line and reports its `slope`, `intercept`, and goodness-of-fit
 (`r`, `r2`). The dataset words like `col-means` take a `MatrixUtil`
 Matrix whose **rows are observations** and **columns are variables** —
-so you must `import "aql:matrix-util"` yourself in scripts that build a
+so you must `import "boru:matrix-util"` yourself in scripts that build a
 Matrix (the library does not re-export it).
 
 ---
